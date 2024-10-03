@@ -632,3 +632,31 @@ ST_FUNC void gsym_addr(int t, int a)
 /*************************************************************/
 #endif
 /*************************************************************/
+
+
+/*
+
+TODO:
+* Multi-stage code generation allowing smaller jump instructions and link-time constants:
+  * Generate special placeholder instructions that are not smaller than final instruction if address is unknown.
+  * When linking:
+    * Reduce size of placeholders (placeholder corruption is ok at this point) to correct size.
+      Relocation information may be needed to calculate size.
+    * Create map that maps old offsets to new ones.
+    * Replace placeholders with actual instructions using relocation information.
+  * Local jumps must use relocations even the relative offsets is known, because it may change during linking.
+* Import and export VM interface with dllexport and dllimport attributes, but some of those attributes
+  requires TCC_TARGET_PE enabled.
+  * or better, use following:
+    __attribute__((section(".text.cc.vm.import.NNN"))) void f() {}
+    __attribute__((section(".text.cc.vm.export.NNN"))) void f() { ... }
+    where NNN is function index
+  * during function prologue generation, we can output parameters information to special section
+  * during linking we have import/export function index and associated symbol name which is enough to link it.
+  * we can add functionality that generates vm interface since we have parameters info.
+  * this can be in form of files that can be included by the host.
+* TCC should be able to write and load .o files in ELF format for later linking.
+* Linker should handle constructor, destructor, weak, e.t.c. attributes.
+* Linker should be able to remove unused functions and data since we have its size in symbols table.
+
+*/
