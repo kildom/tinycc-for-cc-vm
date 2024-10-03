@@ -1,0 +1,22 @@
+
+
+
+ADD
+SUB
+MUL Rd, Rr       Standard arithmetic
+MUL64 Rd, Rr     Multiply result is 64-bit on Ri:Ro
+
+POP Rd           Pop 32-bit value to register
+PUSH8 Rr
+PUSH16 Rr
+PUSH24 Rr
+PUSH32 Rr        Push value from register
+
+CALL Rr          Push BP, push PC, set PC = Rr
+CALL N           Push BP, push PC, set PC = PC + N
+JUMP Rr          set PC = Rr
+JUMP N           set PC = PC + N
+PROLOGUE N       Assign SP to BP and increase stack by 4*N bytes.
+RET N            Assign BP to SP, pop return address, pop BP, pop 4*N bytes.
+PUSHBLOCK N, Rd  Increase stack by N bytes and assign SP to Rd register.
+POPBLOCK N       Decrease stack by N bytes
