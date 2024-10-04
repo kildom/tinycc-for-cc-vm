@@ -87,7 +87,7 @@ int get_label(int t) {
 /* load 'r' from value 'sv' */
 void load(int r, SValue *sv)
 {
-    DEBUG_COMMENT("load r%d <- type:%d r:0x%04X r2:0x%04X C:0x%08lX", r, sv->type.t, sv->r, sv->r2, sv->c.i);
+    //DEBUG_COMMENT("load r%d <- type:%d r:0x%04X r2:0x%04X C:0x%08lX", r, sv->type.t, sv->r, sv->r2, sv->c.i);
 
     int v, t, ft, fc, fr;
     SValue v1;
@@ -99,61 +99,67 @@ void load(int r, SValue *sv)
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
 
     v = fr & VT_VALMASK;
+
     if (fr & VT_LVAL) {
+    
         if (v == VT_LLOCAL) {
-            // todo
-        } else if (v == VT_LOCAL) {
-            OUT("POP R%d", r);
-            g8(0);
+            tcc_error("TODO: VT_LLOCAL");
+        }
+
+        int btype = ft & VT_BTYPE;
+        int type = ft & VT_TYPE;
+        int bits;
+        int sign_extend = 0;
+
+        if ((ft & VT_BTYPE) == VT_FLOAT) {
+            bits = 32;
+        } else if ((ft & VT_BTYPE) == VT_DOUBLE) {
+            bits = 64;
+        } else if ((ft & VT_BTYPE) == VT_LDOUBLE) {
+            bits = 64;
+        } else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) {
+            bits = 8;
+            sign_extend = 1;
+        } else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED)) {
+            bits = 8;
+            sign_extend = 0;
+        } else if ((ft & VT_TYPE) == VT_SHORT) {
+            bits = 16;
+            sign_extend = 1;
+        } else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED)) {
+            bits = 16;
+            sign_extend = 0;
+        } else {
+            bits = 32;
+        }
+
+        if ((fr & VT_VALMASK) == VT_CONST) {
+            /* constant memory reference */
+            if (fr & VT_SYM) {
+                int address = instrReadConst(r, 0, bits, sign_extend, 0);
+                addReloc(sv->sym, address);
+            } else {
+                instrReadConst(r, fc, bits, sign_extend, 0);
+            }
+            return;
+        } else if ((fr & VT_VALMASK) == VT_LOCAL) {
+            instrReadConst(r, fc, bits, sign_extend, 1);
             return;
         } else {
-            // todo
+            instrReadInd(r, sv->r & VT_VALMASK, bits, sign_extend);
+            return;
         }
-        #if 0
-        if (v == VT_LLOCAL) {
-            v1.type.t = VT_INT;
-            v1.r = VT_LOCAL | VT_LVAL;
-            v1.c.i = fc;
-            v1.sym = NULL;
-            fr = r;
-            if (!(reg_classes[fr] & RC_INT))
-                fr = get_reg(RC_INT);
-            load(fr, &v1);
-        }
-        if ((ft & VT_BTYPE) == VT_FLOAT) {
-            o(0xd9); /* flds */
-            r = 0;
-        } else if ((ft & VT_BTYPE) == VT_DOUBLE) {
-            o(0xdd); /* fldl */
-            r = 0;
-        } else if ((ft & VT_BTYPE) == VT_LDOUBLE) {
-            o(0xdb); /* fldt */
-            r = 5;
-        } else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) {
-            o(0xbe0f);   /* movsbl */
-        } else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED)) {
-            o(0xb60f);   /* movzbl */
-        } else if ((ft & VT_TYPE) == VT_SHORT) {
-            o(0xbf0f);   /* movswl */
-        } else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED)) {
-            o(0xb70f);   /* movzwl */
-        } else {
-            o(0x8b);     /* movl */
-        }
-        gen_modrm(r, fr, sv->sym, fc);
-        #endif
     } else {
         if (v == VT_CONST) {
+
             if (fr & VT_SYM) {
-                //greloc(cur_text_section, sv->sym, ind, R_386_32);
-                OUT("R%d = sym", r);
-                g8(0);
-                return;
+                int address = instrMovConst(r, 0);
+                addReloc(sv->sym, address);
             } else {
-                // todo: assert data size
                 instrMovConst(r, fc);
-                return;
             }
+            return;
+
             #if 0
         } else if (v == VT_LOCAL) {
             if (fc) {
@@ -189,12 +195,49 @@ void load(int r, SValue *sv)
 /* store register 'r' in lvalue 'v' */
 void store(int r, SValue *v)
 {
-    //int fr, bt, ft, fc;
+    int fr, bt, ft, fc;
 
-    OUT("PUSH R%d", r);
-    g8(0);
+    ft = v->type.t;
+    fc = v->c.i;
+    fr = v->r & VT_VALMASK;
+    ft &= ~(VT_VOLATILE | VT_CONSTANT);
+    bt = ft & VT_BTYPE;
 
-    //tcc_error("store unimplemented");
+    int bits;
+
+    if (bt == VT_FLOAT) {
+        bits = 32;
+    } else if (bt == VT_DOUBLE) {
+        bits = 64;
+    } else if (bt == VT_LDOUBLE) {
+        bits = 64;
+    } else if (bt == VT_SHORT) {
+        bits = 16;
+    } else if (bt == VT_BYTE || bt == VT_BOOL) {
+        bits = 8;
+    } else {
+        bits = 32;
+    }
+
+    if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) {
+        if ((fr & VT_VALMASK) == VT_CONST) {
+            /* constant memory reference */
+            if (fr & VT_SYM) {
+                int address = instrWriteConst(r, 0, bits, 0);
+                addReloc(v->sym, address);
+            } else {
+                instrWriteConst(r, fc, bits, 0);
+            }
+        } else if ((fr & VT_VALMASK) == VT_LOCAL) {
+            instrWriteConst(r, fc, bits, 1);
+        } else {
+            instrWriteInd(r, v->r & VT_VALMASK, bits);
+        }
+    } else if (fr != r) {
+        instrMovReg(r, fr);
+    } else {
+        // Copy the same register
+    }
 }
 
 /* Return the number of registers needed to return the struct, or 0 if
@@ -209,7 +252,7 @@ static void gcall_or_jmp(int is_jmp)
 {
     if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
         uint32_t address = is_jmp ? instrJumpConst() : instrCallConst();
-        greloc(cur_text_section, vtop->sym, address, 1);
+        addReloc(vtop->sym, address);
     } else {
         int r = gv(RC_INT);
         if (is_jmp) {
@@ -232,7 +275,9 @@ void gfunc_call(int nb_args)
 
     func_sym = vtop[-nb_args].type.ref;
 
-    DEBUG_COMMENT("Function call of %d arguments", nb_args);
+    SValue *aaa = &vtop[-nb_args];
+
+    DEBUG_COMMENT("Call %s", get_tok_str(aaa->sym->v, NULL));
 
     if (func_sym->f.func_type == FUNC_ELLIPSIS) {
         // todo: different calling convention for ellipsis:
@@ -318,7 +363,7 @@ void gfunc_prolog(Sym *func_sym)
 
     /*
     call stack:
-        return_address  <-- SP
+        return_address  <-- SP == BP
         return_bp       <-- SP + 4
         param0          <-- SP + 8
         param1          <-- SP + 8 + N
@@ -334,9 +379,9 @@ void gfunc_prolog(Sym *func_sym)
         ...
     */
 
-    prologue_ind = ind;
+    DEBUG_COMMENT("Function %s", get_tok_str(func_sym->v, NULL));
 
-    instrPrologue(-1);
+    prologue_ind = instrPushBlock(0, 0);
 
     for(param = sym->next; param; param = param->next) {
         // Get parameter information
@@ -359,13 +404,15 @@ void gfunc_prolog(Sym *func_sym)
 /* generate function epilog */
 void gfunc_epilog(void)
 {
-    int tmp_ind = ind;
-    ind = prologue_ind;
     int loc_aligned = (-loc + 3) & -4;
-    DEBUG_COMMENT("Adjusting function prologue");
-    instrPrologue(loc_aligned / 4);
-    ind = tmp_ind;
-    instrReturn();
+    if (loc_aligned != 0) {
+        int tmp_ind = ind;
+        ind = prologue_ind;
+        DEBUG_COMMENT("Adjusting function prologue to %d", loc_aligned);
+        g32(loc_aligned);
+        ind = tmp_ind;
+    }
+    instrReturn(epilogue_ret_cleanup);
 }
 
 ST_FUNC void gen_fill_nops(int bytes)
@@ -586,5 +633,10 @@ TODO:
   * SKIP => size - for removing unused functions
   * when copying from sections to output bytecode it should walk at the same time over section data and this list
 * Maybe write linker in C++, pass only the sections (and maybe some other data) and the rest will be done there.
+* PUSH_BLOCK from prologue should be reduced to smallest possible size (removed if zero bytes allocated).
+* Negative exports are special, entries in export table are located before table base.
+  * -1 -> startup and constructors
+  * -2 -> main function
+  * -3 -> destructors
 
 */

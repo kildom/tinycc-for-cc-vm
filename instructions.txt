@@ -12,8 +12,8 @@ PUSH16 Rr
 PUSH24 Rr
 PUSH32 Rr        Push value from register
 
-CALL Rr          Push BP, push PC, set PC = Rr
-CALL N           Push BP, push PC, set PC = PC + N
+CALL Rr          Push BP, push PC, set PC = Rr, set BP = SP
+CALL N           Push BP, push PC, set PC = PC + N, set BP = SP
 JUMP Rr          set PC = Rr
 JUMP N           set PC = PC + N
 PROLOGUE N       Assign SP to BP and increase stack by 4*N bytes.

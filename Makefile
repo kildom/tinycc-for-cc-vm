@@ -1,40 +1,24 @@
 
-OBJ_DIR := _build
-
-SRC := \
-	./tcc.o \
-	./libtcc.c \
-	./tccpp.c \
-	./tccgen.c \
-	./tccdbg.c \
-	./tccasm.c \
-	./tccelf.c \
-	./tccrun.c \
-	./arm-gen.c \
-	./arm-link.c \
-	./arm-asm.c
-
-OBJ := $(patsubst %.c,$(OBJ_DIR)/%.c.o,$(SRC))
-
+OBJ_DIR := bin
+OBJ:=
 TARGET := $(OBJ_DIR)/tcc
 
-ALLFLAGS :=
-CFLAGS := -Os -g -DONE_SOURCE=1 -DCONFIG_TCC_SEMLOCK=0 -DLDOUBLE_SIZE=12 -DTCC_TARGET_ARM=1
-LDFLAGS :=
+CFLAGS := -O0 -g -DCONFIG_TCC_SEMLOCK=0 -DTCC_TARGET_CCVM=1 -DONE_SOURCE=1
 
 CC = gcc
-
 
 all: $(TARGET)
 
 clean:
 	rm -Rf $(OBJ_DIR)
 
-$(TARGET): $(OBJ) Makefile
-	$(CC) $(LDFLAGS) $(ALLFLAGS) $(OBJ) -o $@
+run: $(TARGET) __RUN_ALWAYS__
+	./bin/tcc -c a.c -Iinclude -o a.o
 
-$(OBJ_DIR)/%.c.o: %.c Makefile
+$(TARGET): tcc.c Makefile
 	mkdir -p $(dir $@)
-	$(CC) -MMD -c $(CFLAGS) $(ALLFLAGS) $(word 1,$<) -o $@
+	$(CC) -MMD $(CFLAGS) tcc.c -o $@
 
--include $(patsubst %.o,%.d,$(OBJ))
+__RUN_ALWAYS__:
+
+-include $(TARGET).d
