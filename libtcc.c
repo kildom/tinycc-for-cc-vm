@@ -49,9 +49,9 @@
 #include "riscv64-gen.c"
 #include "riscv64-link.c"
 #include "riscv64-asm.c"
-#elif defined(TCC_TARGET_EMB)
-#include "emb-gen.c"
-#include "emb-link.c"
+#elif defined(TCC_TARGET_CCVM)
+#include "ccvm-gen.c"
+#include "ccvm-link.c"
 #else
 #error unknown target
 #endif

@@ -64,8 +64,8 @@ enum {
 #include "tcc.h"
 
 ST_DATA const char * const target_machine_defs =
-    "__emb__\0"
-    "__emb\0"
+    "__ccvm__\0"
+    "__ccvm\0"
     ;
 
 ST_DATA const int reg_classes[NB_REGS] = {

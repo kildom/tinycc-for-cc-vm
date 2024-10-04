@@ -56,8 +56,8 @@ enum {
 #include "tcc.h"
 
 ST_DATA const char * const target_machine_defs =
-    "__emb__\0"
-    "__emb\0"
+    "__ccvm__\0"
+    "__ccvm\0"
     ;
 
 ST_DATA const int reg_classes[NB_REGS] = {
@@ -72,56 +72,7 @@ const char *default_elfinterp(struct TCCState *s)
     return "/lib/ld-linux.so.3"; // TODO: may be removed
 }
 
-ST_FUNC void g8(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 1;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind] = c;
-    ind = ind1;
-}
-
-ST_FUNC void g16(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 2;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind++] = c;
-    cur_text_section->data[ind++] = c >> 8;
-}
-
-ST_FUNC void g24(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 3;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind++] = c;
-    cur_text_section->data[ind++] = c >> 8;
-    cur_text_section->data[ind++] = c >> 16;
-}
-
-ST_FUNC void g32(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 4;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind++] = c;
-    cur_text_section->data[ind++] = c >> 8;
-    cur_text_section->data[ind++] = c >> 16;
-    cur_text_section->data[ind++] = c >> 24;
-}
+#include "ccvm-instr.c"
 
 int get_label(int t) {
     static int label_number = 1;
@@ -131,12 +82,12 @@ int get_label(int t) {
     return t;
 }
 
-#define OUT(text, ...) printf("%08X:   " text "\n", ind, ##__VA_ARGS__)
+#define OUT(text, ...) printf("------------------- %08X:   " text "\n", ind, ##__VA_ARGS__)
 
 /* load 'r' from value 'sv' */
 void load(int r, SValue *sv)
 {
-    OUT("    // load r%d <- type:%d r:0x%04X r2:0x%04X C:0x%08lX", r, sv->type.t, sv->r, sv->r2, sv->c.i);
+    DEBUG_COMMENT("load r%d <- type:%d r:0x%04X r2:0x%04X C:0x%08lX", r, sv->type.t, sv->r, sv->r2, sv->c.i);
 
     int v, t, ft, fc, fr;
     SValue v1;
@@ -199,8 +150,8 @@ void load(int r, SValue *sv)
                 g8(0);
                 return;
             } else {
-                OUT("R%d = %d (0x%08X)", r, fc, fc);
-                g8(0);
+                // todo: assert data size
+                instrMovConst(r, fc);
                 return;
             }
             #if 0
@@ -225,12 +176,10 @@ void load(int r, SValue *sv)
             oad(0xb8 + r, t ^ 1); /* mov $0, r */
             #endif
         } else if (v != r) {
-            OUT("R%d = R%d", r, v);
-            g8(0);
+            instrMovReg(r, v);
             return;
         } else {
-            OUT("noop # R%d = R%d", r, v);
-            g8(0);
+            // Nothing to do here
             return;
         }
     }
@@ -255,30 +204,19 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
     return 0;
 }
 
-#define MALLOC_OR_STACK(var, required_size) \
-    long long _TMP_##var[64 / 8]; \
-    var = required_size > 64 ? tcc_malloc(required_size) : (void*)_TMP_##var;
-
-#define FREE_OR_STACK(var) \
-    do { \
-        if ((void*)var != (void*)_TMP_##var) tcc_free(var); \
-    } while (0);
-
 /* 'is_jmp' is '1' if it is a jump */
 static void gcall_or_jmp(int is_jmp)
 {
-    int r;
-    const char *instr = is_jmp ? "JUMP" : "CALL";
     if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
-        // constant and relocation case
-        greloc(cur_text_section, vtop->sym, ind + 1, R_386_PC32); // todo: set relocation offset if needed
-        OUT("%s 0x%08lX", instr, vtop->c.i - 4); // todo: what is this value? probably offset where instruction ends, need for relative relocation
-        g8(0);
+        uint32_t address = is_jmp ? instrJumpConst() : instrCallConst();
+        greloc(cur_text_section, vtop->sym, address, 1);
     } else {
-        // otherwise, indirect call
-        r = gv(RC_INT);
-        OUT("%s R%d", instr, r);
-        g8(0);
+        int r = gv(RC_INT);
+        if (is_jmp) {
+            instrJumpReg(r);
+        } else {
+            instrCallReg(r);
+        }
     }
 }
 
@@ -294,7 +232,7 @@ void gfunc_call(int nb_args)
 
     func_sym = vtop[-nb_args].type.ref;
 
-    OUT("    // Function call of %d arguments", nb_args);
+    DEBUG_COMMENT("Function call of %d arguments", nb_args);
 
     if (func_sym->f.func_type == FUNC_ELLIPSIS) {
         // todo: different calling convention for ellipsis:
@@ -323,15 +261,14 @@ void gfunc_call(int nb_args)
             // allocate register to store the address
             int r = get_reg(RC_INT);
             // allocate the necessary size on stack
-            OUT("PUSHBLOCK %d, R%d", offsets[arg_index + 1] - offsets[arg_index], r);
-            g8(0);
+            instrPushBlock(r, offsets[arg_index + 1] - offsets[arg_index]);
             // generate code that copies the structure to newly allocated stack buffer
             vset(&vtop->type, r | VT_LVAL, 0);
             vswap();
             vstore();
         } else if (is_float(vtop->type.t)) {
             gv(RC_FLOAT); /* only one float register */
-            OUT("TODO push float parameter");
+            DEBUG_COMMENT("TODO push float parameter");
             g8(0);
         } else {
             /* XXX: implicit cast ? */
@@ -347,16 +284,13 @@ void gfunc_call(int nb_args)
             // push register according to its slot, which can be bigger than the type due to alignment
             if (aligned_size == 8) {
                 if (size == 8) {
-                    OUT("PUSH32 R%d", vtop->r2);
-                    g8(0);
+                    instrPush(32, vtop->r2);
                 } else {
                     // Push dummy data, although this should never happen
-                    OUT("PUSH32 R0 // padding");
-                    g8(0);
+                    instrPush(32, vtop->r);
                 }
             }
-            OUT("PUSH%d R%d", aligned_size * 8, vtop->r);
-            g8(0);
+            instrPush(aligned_size * 8, vtop->r);
         }
         vtop--;
     }
@@ -370,7 +304,6 @@ void gfunc_call(int nb_args)
     FREE_OR_STACK(offsets);
 }
 
-#define FUNC_PROLOG_SIZE 4 // todo: Fix that
 static int prologue_ind;
 static int epilogue_ret_cleanup;
 
@@ -401,11 +334,9 @@ void gfunc_prolog(Sym *func_sym)
         ...
     */
 
-    OUT("PROLOGUE ??? [filled later]");
-    g8(0);
-
     prologue_ind = ind;
-    ind += FUNC_PROLOG_SIZE;
+
+    instrPrologue(-1);
 
     for(param = sym->next; param; param = param->next) {
         // Get parameter information
@@ -430,12 +361,11 @@ void gfunc_epilog(void)
 {
     int tmp_ind = ind;
     ind = prologue_ind;
-    g32(0x01020304);
     int loc_aligned = (-loc + 3) & -4;
-    OUT("    // update PROLOGUE %d", loc_aligned);
+    DEBUG_COMMENT("Adjusting function prologue");
+    instrPrologue(loc_aligned / 4);
     ind = tmp_ind;
-    OUT("RET %d", epilogue_ret_cleanup);
-    g8(0);
+    instrReturn();
 }
 
 ST_FUNC void gen_fill_nops(int bytes)
@@ -447,16 +377,16 @@ ST_FUNC void gen_fill_nops(int bytes)
 ST_FUNC int gjmp(int t)
 {
     t = get_label(t);
-    OUT("JUMP label_%d", t);
-    g8(0);
+    int addr = instrJumpConst();
+    addLocalReloc(LOCAL_RELOC_LABEL, t, addr);
     return t;
 }
 
 /* generate a jump to a fixed address */
 ST_FUNC void gjmp_addr(int a)
 {
-    OUT("JUMP 0x%04X", a);
-    g8(0);
+    int addr = instrJumpConst();
+    addLocalReloc(LOCAL_RELOC_ADDR, a, addr);
 }
 
 const char* tok_to_str(int tok) {
@@ -486,8 +416,8 @@ const char* tok_to_str(int tok) {
 
 ST_FUNC int gjmp_cond(int op, int t)
 {
-    OUT("JMP (%s) label_%d", tok_to_str(op), t);
-    g8(0);
+    int addr = instrJumpCond(op);
+    addLocalReloc(LOCAL_RELOC_LABEL, t, addr);
     return t;
 }
 
@@ -496,7 +426,7 @@ ST_FUNC int gjmp_append(int n, int t)
     int r;
     if (n) {
         if (t && t != n) {
-            OUT("ALIAS label_%d := label_%d", t, n);
+            addLocalReloc(LOCAL_RELOC_ALIAS_LABEL, t, n);
             return n;
         } else {
             return n;
@@ -504,14 +434,14 @@ ST_FUNC int gjmp_append(int n, int t)
     } else {
         r = get_label(t);
     }
-    OUT("    // gjmp_append 0x%04X 0x%04X -> 0x%04X", n, t, r);
+    DEBUG_COMMENT("gjmp_append 0x%04X 0x%04X -> 0x%04X", n, t, r);
     return r;
 }
 
 /* generate an integer binary operation */
 void gen_opi(int op)
 {
-    OUT("    // 0x%04X %c (0x%02X) 0x%04X", vtop[-1].r, op, op, vtop[0].r);
+    DEBUG_COMMENT("0x%04X %c (0x%02X) 0x%04X", vtop[-1].r, op, op, vtop[0].r);
     switch (op)
     {
     case TOK_SAR:
@@ -522,8 +452,7 @@ void gen_opi(int op)
         int b = vtop[0].r;
         vtop--;
         save_reg_upstack(a, 1);
-        OUT("SET R%d = R%d %c R%d", a, a, op, b);
-        g8(0);
+        instrBinOp(op, a, b);
         return;
     }
     case TOK_ULT:
@@ -541,8 +470,7 @@ void gen_opi(int op)
         int b = vtop[0].r;
         vtop--;
         vset_VT_CMP(op);
-        OUT("Flags = R%d %s R%d", a, tok_to_str(op), b);
-        g8(0);
+        instrCmp(a, b);
         return;
     }
 
@@ -553,8 +481,7 @@ void gen_opi(int op)
         vtop--;
         save_reg_upstack(a, 1);
         save_reg(b);
-        OUT("R%d:R%d = R%d * R%d", a, b, a, b);
-        g8(0);
+        instrBinOp(op, a, b);
         vtop[0].r2 = b;
         return;
     }
@@ -622,11 +549,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align)
 
 ST_FUNC void gsym_addr(int t, int a)
 {
-    if (ind == a) {
-        OUT("label_%d:", t);
-    } else {
-        OUT("label_%d = 0x%04X", t, a);
-    }
+    addLocalReloc(LOCAL_RELOC_SET_LABEL, a, t);
 }
 
 /*************************************************************/
@@ -648,8 +571,8 @@ TODO:
 * Import and export VM interface with dllexport and dllimport attributes, but some of those attributes
   requires TCC_TARGET_PE enabled.
   * or better, use following:
-    __attribute__((section(".text.cc.vm.import.NNN"))) void f() {}
-    __attribute__((section(".text.cc.vm.export.NNN"))) void f() { ... }
+    __attribute__((section(".text.ccvm.import.NNN"))) void f() {}
+    __attribute__((section(".text.ccvm.export.NNN"))) void f() { ... }
     where NNN is function index
   * during function prologue generation, we can output parameters information to special section
   * during linking we have import/export function index and associated symbol name which is enough to link it.
@@ -658,5 +581,10 @@ TODO:
 * TCC should be able to write and load .o files in ELF format for later linking.
 * Linker should handle constructor, destructor, weak, e.t.c. attributes.
 * Linker should be able to remove unused functions and data since we have its size in symbols table.
+* Linker should generate ordered list of actions: address => action
+  * RELOCATION => type, actual address - for relocations
+  * SKIP => size - for removing unused functions
+  * when copying from sections to output bytecode it should walk at the same time over section data and this list
+* Maybe write linker in C++, pass only the sections (and maybe some other data) and the rest will be done there.
 
 */

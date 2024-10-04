@@ -150,7 +150,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #if !defined(TCC_TARGET_I386) && !defined(TCC_TARGET_ARM) && \
     !defined(TCC_TARGET_ARM64) && !defined(TCC_TARGET_C67) && \
     !defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_RISCV64) && \
-    !defined(TCC_TARGET_EMB)
+    !defined(TCC_TARGET_CCVM)
 # if defined __x86_64__
 #  define TCC_TARGET_X86_64
 # elif defined __arm__
@@ -421,9 +421,9 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # include "riscv64-gen.c"
 # include "riscv64-link.c"
 # include "riscv64-asm.c"
-#elif defined TCC_TARGET_EMB
-# include "emb-gen.c"
-# include "emb-link.c"
+#elif defined TCC_TARGET_CCVM
+# include "ccvm-gen.c"
+# include "ccvm-link.c"
 #else
 #error unknown target
 #endif
