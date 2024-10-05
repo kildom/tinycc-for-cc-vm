@@ -13,7 +13,7 @@ clean:
 	rm -Rf $(OBJ_DIR)
 
 run: $(TARGET) __RUN_ALWAYS__
-	./bin/tcc -c a.c -Iinclude -o a.o
+	./bin/tcc -c sample.c -I../include -o bin/a.o
 
 $(TARGET): ../tcc.c Makefile
 	mkdir -p $(dir $@)

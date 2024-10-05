@@ -11,17 +11,17 @@
             "program": "${workspaceFolder}/ccvm/bin/tcc",
             /*"args": [
                 "-c",
-                "a.c",
+                "sample.c",
                 "-Iinclude",
                 "-o",
-                "a.o"
+                "bin/a.o"
             ],*/
             "args": [
-                "a.c",
+                "sample.c",
                 "-nostdlib",
                 "-I../include",
                 "-o",
-                "a.out"
+                "bin/a.out"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/ccvm",
