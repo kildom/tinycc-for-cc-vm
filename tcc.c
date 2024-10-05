@@ -375,31 +375,6 @@ redo:
         done = ret || ++n >= s->nb_files;
     } while (!done && (s->output_type != TCC_OUTPUT_OBJ || s->option_r));
 
-    printf("sections %d\n", s->nb_sections);
-    Section *relsec;
-    for (int i = 1; i < s->nb_sections; i++) {
-        printf("%s %d\n", s->sections[i]->name, (int)s->sections[i]->data_offset);
-        relsec = s->sections[i];
-    }
-
-    Section *strtab = symtab_section->link;
-    for (int i = 0; i < strtab->data_offset; i++) {
-        printf("%c", strtab->data[i] ? strtab->data[i] : '`');
-    }
-    printf("\n");
-    
-    ElfW(Sym) *sym;
-    for (int i = 0; i < symtab_section->data_offset; i += sizeof(*sym)) {
-        sym = (void*)&symtab_section->data[i];
-        printf("%d: 0x%08X 0x%04X 0x%04X '%s'\n", (int)(i / sizeof(*sym)), sym->st_value, sym->st_size, sym->st_other, &strtab->data[sym->st_name]);
-    }
-
-    ElfW_Rel* rel;
-    for (int i = 0; i < relsec->data_offset; i += sizeof(*rel)) {
-        rel = (void*)&relsec->data[i];
-        printf("%d: 0x%08X sym=%d type=%d\n", (int)(i / sizeof(*rel)), rel->r_offset, ELF32_R_SYM(rel->r_info), ELF32_R_TYPE(rel->r_info));
-    }
-
     if (s->do_bench)
         end_time = getclock_ms();
 

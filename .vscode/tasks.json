@@ -8,6 +8,9 @@
             "type": "shell",
             "command": "make",
             "problemMatcher": "$gcc",
+            "options": {
+                "cwd": "${workspaceFolder}/ccvm"
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true

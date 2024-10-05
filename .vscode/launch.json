@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/bin/tcc",
+            "program": "${workspaceFolder}/ccvm/bin/tcc",
             /*"args": [
                 "-c",
                 "a.c",
@@ -19,12 +19,12 @@
             "args": [
                 "a.c",
                 "-nostdlib",
-                "-Iinclude",
+                "-I../include",
                 "-o",
                 "a.out"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/ccvm",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",

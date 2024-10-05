@@ -1332,51 +1332,6 @@ static Sym *external_sym(int v, CType *type, int r, AttributeDef *ad)
     /* push variables on local_stack if any */
     if (local_stack && (s->type.t & VT_BTYPE) != VT_FUNC)
         s = sym_copy(s, &local_stack);
-
-    //s->
-
-    // todo: Put it to special section
-
-    Section *sec = ad->section;
-
-    if (sec
-        && (s->type.t & VT_BTYPE) == VT_FUNC
-        && s->type.ref != NULL
-        && strlen(sec->name) > 18
-        && (memcmp(sec->name, ".text.ccvm.import.", 18) == 0
-            || memcmp(sec->name, ".text.ccvm.export.", 18) == 0)
-    ) {
-        int is_export = sec->name[11] == 'e';
-        int index = atoi(&sec->name[18]);
-        printf("VM %s %s @%d\n", is_export ? "export" : "import", get_tok_str(s->v, NULL), index);
-        for(Sym *param = s->type.ref->next; param; param = param->next) {
-            CType* type = &param->type;
-            int align;
-            int size = type_size(type, &align);
-            printf("    %s, size=%d, align=%d, t=0x%03X\n", get_tok_str(param->v, NULL), size, align, type->t);
-            if ((type->t & VT_BTYPE) == VT_STRUCT) {
-                printf("        struct %s\n", get_tok_str(type->ref->v, NULL));
-            } else if ((type->t & VT_BTYPE) == VT_PTR) {
-                printf("        pointer %p\n", type->ref);
-            }
-        }
-        // return type
-        {
-            CType* type = &s->type.ref->type;
-            int align;
-            int size = type_size(type, &align);
-            printf("    return size=%d, align=%d, t=0x%03X\n", size, align, type->t);
-            if ((type->t & VT_BTYPE) == VT_STRUCT) {
-                printf("        struct %s\n", get_tok_str(type->ref->v, NULL));
-            } else if ((type->t & VT_BTYPE) == VT_PTR) {
-                CType* type2 = &type->ref->type;
-                int align;
-                int size = type_size(type2, &align);
-                printf("        pointer size=%d, align=%d, t=0x%03X\n", size, align, type2->t);
-            }
-        }
-    }
-
     return s;
 }
 

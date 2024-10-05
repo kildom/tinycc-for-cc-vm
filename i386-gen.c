@@ -215,7 +215,6 @@ static void gen_modrm(int op_reg, int r, Sym *sym, int c)
 /* load 'r' from value 'sv' */
 ST_FUNC void load(int r, SValue *sv)
 {
-    printf("\t\t\tload r%d <- type:%d r:0x%04X r2:0x%04X C:0x%08lX\n", r, sv->type.t, sv->r, sv->r2, sv->c.i);
     int v, t, ft, fc, fr;
     SValue v1;
 
@@ -296,7 +295,6 @@ ST_FUNC void load(int r, SValue *sv)
 /* store register 'r' in lvalue 'v' */
 ST_FUNC void store(int r, SValue *v)
 {
-    printf("\t\t\tstore r%d -> type:%d r:0x%04X r2:0x%04X C:0x%08lX\n", r, v->type.t, v->r, v->r2, v->c.i);
     int fr, bt, ft, fc;
 
 #ifdef TCC_TARGET_PE
