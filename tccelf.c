@@ -19,7 +19,9 @@
  */
 
 #include "tcc.h"
+#ifdef TCC_TARGET_CCVM
 #include "ccvm-link.h"
+#endif
 
 /* Define this to get some debug output during relocation processing.  */
 #undef DEBUG_RELOC

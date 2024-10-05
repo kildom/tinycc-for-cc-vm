@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/ccvm/bin/tcc",
+            "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc",
             /*"args": [
                 "-c",
                 "sample.c",
