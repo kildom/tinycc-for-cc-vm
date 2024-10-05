@@ -19,6 +19,7 @@
  */
 
 #include "tcc.h"
+#include "ccvm-link.h"
 
 /* Define this to get some debug output during relocation processing.  */
 #undef DEBUG_RELOC
@@ -3008,6 +3009,8 @@ LIBTCCAPI int tcc_output_file(TCCState *s, const char *filename)
     return  pe_output_file(s, filename);
 #elif TCC_TARGET_MACHO
     return macho_output_file(s, filename);
+#elif TCC_TARGET_CCVM
+    return ccvm_output_file(s, filename);
 #else
     return elf_output_file(s, filename);
 #endif

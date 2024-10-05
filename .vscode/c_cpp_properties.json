@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "ccvm",
+            "defines": [
+                "CONFIG_TCC_SEMLOCK=0",
+                "TCC_TARGET_CCVM=1",
+                "ONE_SOURCE",
+                "INTELLISENSE=1"
+            ],
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "includePath": [
+                "${workspaceFolder}",
+                "${workspaceFolder}/ccvm",
+                "${workspaceFolder}/include"
+            ]
+        }
+    ],
+    "version": 4
+}

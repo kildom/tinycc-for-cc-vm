@@ -422,8 +422,8 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # include "riscv64-link.c"
 # include "riscv64-asm.c"
 #elif defined TCC_TARGET_CCVM
-# include "ccvm-gen.c"
-# include "ccvm-link.c"
+# include "ccvm/ccvm-gen.c"
+# include "ccvm/ccvm-stubs.c"
 #else
 #error unknown target
 #endif

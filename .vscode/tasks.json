@@ -7,8 +7,11 @@
             "label": "build",
             "type": "shell",
             "command": "make",
-            "group": "build",
-            "problemMatcher": "$gcc"
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
         }
     ]
 }

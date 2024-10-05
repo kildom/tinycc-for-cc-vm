@@ -9,12 +9,19 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/tcc",
-            "args": [
+            /*"args": [
                 "-c",
                 "a.c",
                 "-Iinclude",
                 "-o",
                 "a.o"
+            ],*/
+            "args": [
+                "a.c",
+                "-nostdlib",
+                "-Iinclude",
+                "-o",
+                "a.out"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

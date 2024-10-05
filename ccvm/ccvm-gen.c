@@ -1,5 +1,5 @@
 
-#ifdef TARGET_DEFS_ONLY
+#if defined(TARGET_DEFS_ONLY) || defined(INTELLISENSE)
 /* number of available registers */
 #define NB_REGS 4
 
@@ -50,10 +50,17 @@ enum {
 
 
 /******************************************************/
-#else /* ! TARGET_DEFS_ONLY */
+/* ! TARGET_DEFS_ONLY */
+#endif
+#if !defined(TARGET_DEFS_ONLY) || defined(INTELLISENSE)
 /******************************************************/
 #define USING_GLOBALS
 #include "tcc.h"
+
+#include "ccvm-instr.c"
+#include "ccvm-localreloc.c"
+#include "ccvm-output.c"
+#include "ccvm-link.c"
 
 ST_DATA const char * const target_machine_defs =
     "__ccvm__\0"
@@ -72,7 +79,6 @@ const char *default_elfinterp(struct TCCState *s)
     return "/lib/ld-linux.so.3"; // TODO: may be removed
 }
 
-#include "ccvm-instr.c"
 
 int get_label(int t) {
     static int label_number = 1;

@@ -1,5 +1,5 @@
 
-int g();
+int g() {return 1;}
 
 typedef struct XX
 {
@@ -28,6 +28,9 @@ const char* f(int x, XX z, char zt, signed char zt2) {
     //return x;
 }
 
+int main() {
+    return 0;
+}
 /*
 
 ret      <--
