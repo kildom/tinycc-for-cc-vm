@@ -12,10 +12,12 @@ all: $(TARGET)
 clean:
 	rm -Rf $(OBJ_DIR)
 
-run: $(TARGET) __RUN_ALWAYS__
+run_compile: $(TARGET) __RUN_ALWAYS__
 	./bin/ccvm-tcc -c sample/main.c -I../include -o bin/sample_main.o
 	./bin/ccvm-tcc -c sample/a.c -I../include -o bin/sample_a.o
 	./bin/ccvm-tcc -c sample/b.c -I../include -o bin/sample_b.o
+
+run: run_compile $(TARGET) __RUN_ALWAYS__
 	./bin/ccvm-tcc -Wl,-nostdlib bin/sample_main.o bin/sample_a.o bin/sample_b.o -o bin/sample.bin
 
 $(TARGET): ../tcc.c Makefile

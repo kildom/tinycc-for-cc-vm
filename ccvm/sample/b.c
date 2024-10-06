@@ -1,7 +1,8 @@
 
 #include "header.h"
 
-CCVM_IMPORT(2)
+CCVM_IMPORT(2, host2);
+
 int host2(int x);
 
 void b() {

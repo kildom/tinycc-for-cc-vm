@@ -1,6 +1,7 @@
 {
     "cSpell.words": [
-        "ccvm"
+        "ccvm",
+        "rodata"
     ],
     "files.associations": {
         "system_error": "c",
@@ -9,6 +10,10 @@
         "tuple": "c",
         "type_traits": "c",
         "utility": "c",
-        "typeinfo": "c"
+        "typeinfo": "c",
+        "string": "c",
+        "string_view": "c",
+        "ccvm-link.h": "c",
+        "vector": "cpp"
     }
 }

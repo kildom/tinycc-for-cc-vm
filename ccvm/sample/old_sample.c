@@ -12,10 +12,10 @@ typedef struct XX
 #define _CCVM_STR(x) _CCVM_STR1(x)
 
 #define CCVM_IMPORT(index) \
-    __attribute__((section(".text.ccvm.import." _CCVM_STR(index))))
+    __attribute__((section(".ccvm.import." _CCVM_STR(index))))
 
 #define CCVM_EXPORT(index) \
-    __attribute__((section(".text.ccvm.export." _CCVM_STR(index))))
+    __attribute__((section(".ccvm.export." _CCVM_STR(index))))
 
 CCVM_IMPORT(0)
 void a(int some);

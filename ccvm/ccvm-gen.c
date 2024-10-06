@@ -624,8 +624,8 @@ TODO:
 * Import and export VM interface with dllexport and dllimport attributes, but some of those attributes
   requires TCC_TARGET_PE enabled.
   * or better, use following:
-    __attribute__((section(".text.ccvm.import.NNN"))) void f() {}
-    __attribute__((section(".text.ccvm.export.NNN"))) void f() { ... }
+    __attribute__((section(".ccvm.import.NNN"))) void f() {}
+    __attribute__((section(".ccvm.export.NNN"))) void f() { ... }
     where NNN is function index
   * during function prologue generation, we can output parameters information to special section
   * during linking we have import/export function index and associated symbol name which is enough to link it.
@@ -640,9 +640,11 @@ TODO:
   * when copying from sections to output bytecode it should walk at the same time over section data and this list
 * Maybe write linker in C++, pass only the sections (and maybe some other data) and the rest will be done there.
 * PUSH_BLOCK from prologue should be reduced to smallest possible size (removed if zero bytes allocated).
-* Negative exports are special, entries in export table are located before table base.
-  * -1 -> startup and constructors
-  * -2 -> main function
-  * -3 -> destructors
+* User imports and exports starts at 1, index 0 is reserved.
+  * import 0 - indicate exit from guest function
+  * export 0 - call destructors
+  * main function is called as any other exported function, but when generating
+    sample host code, we can generate more sophisticated wrapper. It will
+    get argc and argv as arguments, push them into the stack and call exported main.
 
 */

@@ -24,6 +24,15 @@
             "options": {
                 "cwd": "${workspaceFolder}/ccvm"
             }
+        },
+        {
+            "label": "build and compile",
+            "type": "shell",
+            "command": "make run_compile",
+            "problemMatcher": "$gcc",
+            "options": {
+                "cwd": "${workspaceFolder}/ccvm"
+            }
         }
     ]
 }
