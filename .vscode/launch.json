@@ -4,24 +4,18 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
-            "name": "(gdb) Launch",
+            "name": "compiler",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc",
-            /*"args": [
-                "-c",
-                "sample.c",
-                "-Iinclude",
-                "-o",
-                "bin/a.o"
-            ],*/
             "args": [
-                "sample.c",
-                "-nostdlib",
+                "-c",
                 "-I../include",
+                "sample/a.c",
                 "-o",
-                "bin/a.out"
+                "bin/sample_a.o"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/ccvm",
@@ -41,6 +35,38 @@
                 }
             ],
             "preLaunchTask": "build"
+        },
+        {
+            "name": "linker",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc",
+            "args": [
+                "-Wl,-nostdlib",
+                "bin/sample_main.o",
+                "bin/sample_a.o",
+                "bin/sample_b.o",
+                "-o",
+                "bin/sample.bin"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/ccvm",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build and run"
         }
     ]
 }

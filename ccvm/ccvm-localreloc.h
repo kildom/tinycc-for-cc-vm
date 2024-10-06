@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define LOCAL_RELOC_PREFIX ".ccvm.loc.rel"
+
 /** The address at "target" should point to the "source" address.
  *  This is needed since the code size may change.
  */
@@ -24,13 +26,24 @@
  *  The name of section is ".ccvm.loc.rel***", where "***" is a name of the related section.
  */
 typedef struct LocalRelocEntry {
-    int type;
+    uint32_t note_namesz;
+    uint32_t note_descsz;
+    uint32_t note_type;
+    uint64_t note_name;
+    uint32_t type;
     uint32_t source;
     uint32_t target;
 } LocalRelocEntry;
 
+#define LOCAL_RELOC_NOTE_NAMESZ 8
+#define LOCAL_RELOC_NOTE_DESCSZ (sizeof(LocalRelocEntry) - offsetof(LocalRelocEntry, type))
+#define LOCAL_RELOC_NOTE_TYPE 0x6D766363
+#define LOCAL_RELOC_NOTE_NAME 0x00526C2D4D764363uLL
+
 /** Add local relocation in the section related to current code section.
  */
 static void addLocalReloc(int type, uint32_t source, uint32_t target);
+
+static int patchLocalReloc(LocalRelocEntry* entry, int addr_offset, int label_offset, int* next_label);
 
 #endif // _CCVM_LOCALRELOC_H_

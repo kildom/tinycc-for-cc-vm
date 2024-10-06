@@ -19,10 +19,11 @@ static void setupLocalReloc() {
     int len = strlen(cur_text_section->name);
     char *local_name;
     MALLOC_OR_STACK(local_name, len + 13);
-    sprintf(local_name, ".ccvm.loc.rel%s", cur_text_section->name);
-    local_reloc_section = new_section(s, local_name, SHT_LOCAL_RELOC, 0);
+    sprintf(local_name, LOCAL_RELOC_PREFIX "%s", cur_text_section->name);
+    local_reloc_section = new_section(s, local_name, SHT_NOTE, 0);
     local_reloc_section->sh_entsize = sizeof(LocalRelocEntry);
     local_reloc_section->link = cur_text_section;
+    local_reloc_section->sh_info = cur_text_section->sh_num;
     FREE_OR_STACK(local_name);
 }
 
@@ -31,11 +32,15 @@ static void addLocalReloc(int type, uint32_t source, uint32_t target) {
     if (!local_reloc_section || local_reloc_section->link != cur_text_section) {
         setupLocalReloc();
     }
-    uint32_t new_offset = cur_text_section->data_offset + sizeof(LocalRelocEntry);
-    if (new_offset > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, new_offset);
-    LocalRelocEntry* entry = (void*)&cur_text_section->data[cur_text_section->data_offset];
-    cur_text_section->data_offset = new_offset;
+    uint32_t new_offset = local_reloc_section->data_offset + sizeof(LocalRelocEntry);
+    if (new_offset > local_reloc_section->data_allocated)
+        section_realloc(local_reloc_section, new_offset);
+    LocalRelocEntry* entry = (void*)&local_reloc_section->data[local_reloc_section->data_offset];
+    local_reloc_section->data_offset = new_offset;
+    entry->note_namesz = LOCAL_RELOC_NOTE_NAMESZ;
+    entry->note_descsz = LOCAL_RELOC_NOTE_DESCSZ;
+    entry->note_type = LOCAL_RELOC_NOTE_TYPE;
+    entry->note_name = LOCAL_RELOC_NOTE_NAME;
     entry->type = type;
     entry->source = source;
     entry->target = target;
@@ -56,4 +61,47 @@ static void addLocalReloc(int type, uint32_t source, uint32_t target) {
     default:
         break;
     }
+}
+
+static int patchLocalReloc(LocalRelocEntry* entry, int addr_offset, int label_offset, int* next_label)
+{
+    int name_size = (entry->note_namesz + 3) & ~3;
+    int desc_size = (entry->note_descsz + 3) & ~3;
+    int size = 4 + 4 + 4 + name_size + desc_size;
+
+    if (entry->note_namesz != LOCAL_RELOC_NOTE_NAMESZ
+        || entry->note_descsz != LOCAL_RELOC_NOTE_DESCSZ
+        || entry->note_type != LOCAL_RELOC_NOTE_TYPE
+        || entry->note_name != LOCAL_RELOC_NOTE_NAME
+    ) {
+        return size;
+    }
+
+    switch (entry->type)
+    {
+    case LOCAL_RELOC_ADDR:
+        entry->source += addr_offset;
+        entry->target += addr_offset;
+        break;
+    case LOCAL_RELOC_LABEL:
+        entry->source += label_offset;
+        entry->target += addr_offset;
+        if (entry->source >= *next_label) *next_label = entry->source + 1;
+        break;
+    case LOCAL_RELOC_SET_LABEL:
+        entry->source += addr_offset;
+        entry->target += label_offset;
+        if (entry->target >= *next_label) *next_label = entry->target + 1;
+        break;
+    case LOCAL_RELOC_ALIAS_LABEL:
+        entry->source += label_offset;
+        entry->target += label_offset;
+        if (entry->source >= *next_label) *next_label = entry->source + 1;
+        if (entry->target >= *next_label) *next_label = entry->target + 1;
+        break;
+    default:
+        break;
+    }
+
+    return size;
 }

@@ -13,7 +13,10 @@ clean:
 	rm -Rf $(OBJ_DIR)
 
 run: $(TARGET) __RUN_ALWAYS__
-	./bin/ccvm-tcc -c sample.c -I../include -o bin/a.o
+	./bin/ccvm-tcc -c sample/main.c -I../include -o bin/sample_main.o
+	./bin/ccvm-tcc -c sample/a.c -I../include -o bin/sample_a.o
+	./bin/ccvm-tcc -c sample/b.c -I../include -o bin/sample_b.o
+	./bin/ccvm-tcc -Wl,-nostdlib bin/sample_main.o bin/sample_a.o bin/sample_b.o -o bin/sample.bin
 
 $(TARGET): ../tcc.c Makefile
 	-mv ../config.h ../config-backup.h  > /dev/null 2>&1 ; rm -f ../config.h > /dev/null 2>&1

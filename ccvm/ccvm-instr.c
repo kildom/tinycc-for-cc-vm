@@ -3,6 +3,11 @@
 
 #include "ccvm-output.h"
 
+#ifdef INTELLISENSE
+#define USING_GLOBALS
+#include "tcc.h"
+#endif
+
 #define INSTR_MOV_CONST 1
 #define INSTR_MOV_REG 2
 #define INSTR_JUMP_REG 3

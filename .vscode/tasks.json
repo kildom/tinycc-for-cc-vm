@@ -15,6 +15,15 @@
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "build and run",
+            "type": "shell",
+            "command": "make run",
+            "problemMatcher": "$gcc",
+            "options": {
+                "cwd": "${workspaceFolder}/ccvm"
+            }
         }
     ]
 }
