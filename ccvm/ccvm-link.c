@@ -37,6 +37,8 @@ typedef struct LinkSymbol {
     int offset;
     int size;
     bool is_automatic;
+    bool is_removed;
+    uint32_t real_address;
     struct InterfaceSymbol* interface_symbol;
     struct OutputSection* section;
     struct LinkSymbol* group_next;
@@ -63,12 +65,6 @@ typedef struct OutputSection {
     LinkRelocation VEC* relocations;
 } OutputSection;
 
-typedef struct OutputMemory {
-    /*uint32_t address;
-    int sections_count;
-    OutputSection VEC* sections;*/
-} OutputMemory;
-
 static LinkSymbol* VEC* link_symbols;
 static int elf_symbol_count;
 
@@ -77,13 +73,13 @@ static InterfaceSymbol VEC* imports;
 
 static OutputSection outputSections[OUTPUT_SECTION_COUNT];
 
-static OutputMemory data_memory;
-static OutputMemory program_memory;
-
 static Section* elf_symtab;
 static Section* elf_strtab;
 static Section* elf_link_symbols;
 static LinkSymbol* invalidExport;
+
+static uint8_t VEC* programMemory;
+static uint8_t VEC* dataMemory;
 
 static bool interfaceSymbolFromSection(Section *sec, InterfaceSymbol* output)
 {
@@ -293,10 +289,10 @@ static void createExportTable(TCCState *s1)
     for (int i = 0; i < vecSize(exports); i++) {
         if (exports[i].link_symbol) {
             g32(0);
-            put_elf_reloca(symtab_section, cur_text_section, 4 * i, 1, exports[i].link_symbol->elf_sym_index, 0);
+            put_elf_reloca(symtab_section, cur_text_section, 4 * i, RELOC_DATA, exports[i].link_symbol->elf_sym_index, 0);
         } else {
             g32(0);
-            put_elf_reloca(symtab_section, cur_text_section, 4 * i, 1, invalidExport->elf_sym_index, 0);
+            put_elf_reloca(symtab_section, cur_text_section, 4 * i, RELOC_DATA, invalidExport->elf_sym_index, 0);
         }
     }
     cur_text_section->data_offset = ind;
@@ -317,102 +313,6 @@ static const char* outputSectionName(OutputSectionType type)
     }
 }
 
-/*
-
-
-static int linkSectionCmp(const void* pa, const void* pb)
-{
-    const OutputSection* a = pa;
-    const OutputSection* b = pb;
-    if (a->type < b->type) return -1;
-    if (a->type > b->type) return 1;
-    return strcmp(a->name, b->name);
-}
-static void loadLinkSections(TCCState *s1)
-{
-    uint32_t loaded_mask = 0;
-    OutputSection VEC* link_sections;
-    vecAlloc(link_sections, 50);
-
-    for (int i = 1; i < s1->nb_sections; i++) {
-        Section* sec = s1->sections[i];
-        OutputSection* ls = vecReserve(link_sections);
-        ls->type = getLinkSectionType(sec->name);
-        if (ls->type == OUTPUT_SECTION_UNUSED) {
-            continue;
-        }
-        ls->name = sec->name;
-        ls->elf_section = sec;
-        ls->rel_section = sec->reloc;
-        if (!ls->rel_section) {
-            ls->rel_section = findSection(s1, strlen(sec->name), ".rel%s", sec->name);
-        }
-        ls->local_rel_section = findSection(s1, strlen(sec->name), ".ccvm.loc.rel%s", sec->name);
-        vecPush(link_sections);
-        loaded_mask |= 1 << ls->type;
-    }
-
-    // If missing, create empty section or show error if mandatory
-    for (int i = 0; i <= OUTPUT_SECTION_PROGRAM_LAST; i++) {
-        if (loaded_mask & (1 << i)) continue;
-        Section* sec = NULL;
-        switch (i)
-        {
-        case OUTPUT_SECTION_REGISTERS:
-            tcc_error("Missing '.ccvm.registers' section.");
-            break;
-        case OUTPUT_SECTION_DATA:
-            sec = new_section(s1, ".data", SHT_PROGBITS, SHF_WRITE | SHF_ALLOC);
-            break;
-        case OUTPUT_SECTION_BSS:
-            sec = new_section(s1, ".bss", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
-            break;
-        case OUTPUT_SECTION_ENTRY:
-            tcc_error("Missing '.ccvm.entry' section.");
-            break;
-        case OUTPUT_SECTION_RODATA:
-            sec = new_section(s1, ".rodata", SHT_PROGBITS, SHF_ALLOC);
-            break;
-        case OUTPUT_SECTION_EXPORT_TABLE:
-            // Created automatically
-            break;
-        case OUTPUT_SECTION_TEXT:
-            sec = new_section(s1, ".data", SHT_PROGBITS, SHF_EXECINSTR | SHF_ALLOC);
-            break;
-        }
-        if (sec) {
-            OutputSection* ls = vecPush(link_sections);
-            ls->type = i;
-            ls->name = sec->name;
-            ls->elf_section = sec;
-            ls->rel_section = NULL;
-            ls->local_rel_section = NULL;
-        }
-    }
-
-    // Sort and assign link sections to memories
-    qsort(link_sections, vecSize(link_sections), sizeof(OutputSection), linkSectionCmp);
-
-    data_memory.address = 0;
-    vecAlloc(data_memory.sections, 4);
-    program_memory.address = 0x40000000;
-    vecAlloc(program_memory.sections, 5);
-
-    for (int i = 0; i < vecSize(link_sections); i++) {
-        OutputSection* ls = &link_sections[i];
-        if (ls->type <= OUTPUT_SECTION_RAM_LAST) {
-            vecPushValue(data_memory.sections, *ls);
-        } else {
-            vecPushValue(program_memory.sections, *ls);
-        }
-        printf("link section %s, rel %s, loc rel %s\n", ls->name,
-            ls->rel_section ? ls->rel_section->name : "none",
-            ls->local_rel_section ? ls->local_rel_section->name : "none"
-            );
-    }
-}
-
-*/
 
 static LinkSymbol* addCustomSymbol(OutputSection *section, uint32_t offset, const char *text, ...)
 {
@@ -505,12 +405,12 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
 
         for (int i = 0; sec_local_rel && i < sec_local_rel->data_offset / sizeof(LocalRelocEntry); i++) {
             LocalRelocEntry* elf_rel = (LocalRelocEntry*)sec_local_rel->data + i;
-            switch (elf_rel->type)
+            switch (elf_rel->cmd)
             {
             case LOCAL_RELOC_ADDR: {
                 LinkSymbol* symbol = addCustomSymbol(output, offset_adjust + elf_rel->source, "ccvm.loc.rel.adr.%d.%d.%d", output->type, k, i);
                 LinkRelocation* rel = vecPush(output->relocations);
-                rel->type = 1;
+                rel->type = elf_rel->type;
                 rel->target = offset_adjust + elf_rel->target;
                 rel->symbol = symbol;
                 break;
@@ -519,20 +419,28 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
                 int label = elf_rel->source;
                 LinkSymbol* symbol = getLabelSymbol(&label_to_symbol, output, elf_rel->source, k);
                 LinkRelocation* rel = vecPush(output->relocations);
-                rel->type = 1;
+                rel->type = elf_rel->type;
                 rel->target = offset_adjust + elf_rel->target;
                 rel->symbol = symbol;
                 break;
             }
+            case LOCAL_RELOC_SET_LABEL:
+                // Will be done later, first, all aliases must be set
+                break;
             case LOCAL_RELOC_ALIAS_LABEL: {
                 LinkSymbol* a = getLabelSymbol(&label_to_symbol, output, elf_rel->source, k);
                 LinkSymbol* b = getLabelSymbol(&label_to_symbol, output, elf_rel->target, k);
                 joinSymbolGroups(a, b);
                 break;
             }
-            case LOCAL_RELOC_SET_LABEL:
-                // Will be done later, first, all aliases must be set
+            case LOCAL_RELOC_CONST: {
+                LinkSymbol* symbol = addCustomSymbol(NULL, elf_rel->source, "ccvm.loc.rel.c.%d.%d.%d", output->type, k, i);
+                LinkRelocation* rel = vecPush(output->relocations);
+                rel->type = elf_rel->type;
+                rel->target = offset_adjust + elf_rel->target;
+                rel->symbol = symbol;
                 break;
+            }
             default:
                 break;
             }
@@ -541,7 +449,7 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
         printf("--%s\n", sec->name);
         for (int i = 0; sec_local_rel && i < sec_local_rel->data_offset / sizeof(LocalRelocEntry); i++) {
             LocalRelocEntry* entry = (LocalRelocEntry*)sec_local_rel->data + i;
-            switch (entry->type)
+            switch (entry->cmd)
             {
             case LOCAL_RELOC_ADDR:
                 break;
@@ -562,7 +470,7 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
         // Assign offsets to local relocation labels
         for (int i = 0; sec_local_rel && i < sec_local_rel->data_offset / sizeof(LocalRelocEntry); i++) {
             LocalRelocEntry* elf_rel = (LocalRelocEntry*)sec_local_rel->data + i;
-            if (elf_rel->type == LOCAL_RELOC_SET_LABEL) {
+            if (elf_rel->cmd == LOCAL_RELOC_SET_LABEL) {
                 int offset = offset_adjust + elf_rel->source;
                 int label = elf_rel->target;
                 LinkSymbol* symbol = getLabelSymbol(&label_to_symbol, output, label, k);
@@ -595,6 +503,11 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
                 sym->offset += offset_adjust;
             }
         }
+    }
+
+    printf("Output section %s\n", output->name);
+    for (LinkRelocation* rel = output->relocations; rel < vecEnd(output->relocations); rel++) {
+        printf("    reloc %d, %s => %d\n", rel->type, rel->symbol ? rel->symbol->name : "?", rel->target);
     }
 }
 
@@ -667,9 +580,63 @@ static void copySections(TCCState *s1)
     }
 }
 
+struct
+{
+    uint32_t stackBegin;
+    uint32_t stackSize;
+    uint32_t stackEnd;
+    uint32_t heapBegin;
+    uint32_t heapSize;
+    uint32_t heapEnd;
+} locations;
+
+
+static void generateSection(TCCState *s1, uint32_t* addr, OutputSection* sec, uint8_t VEC* *destination)
+{
+    TRACE("");
+
+    sec->address = *addr;
+
+    if (destination) {
+        vecPushMultiValue(*destination, sec->data, vecSize(sec->data));
+        *addr += vecSize(sec->data);
+        int padding = ALIGN_UP(*addr, 4) - *addr;
+        vecPushMulti(*destination, padding);
+        *addr += padding;
+    } else {
+        *addr += ALIGN_UP(*addr + vecSize(sec->data), 4);
+    }
+
+}
+
+static void generateBytecode(TCCState *s1)
+{
+    TRACE("");
+
+    vecResize(programMemory, 0);
+    vecResize(dataMemory, 0);
+
+    uint32_t addr = 0;
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_REGISTERS], &dataMemory);
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_DATA], &dataMemory);
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_BSS], NULL);
+    locations.stackBegin = ALIGN_UP(addr, 4);
+    locations.stackEnd = locations.stackBegin + locations.stackSize;
+    locations.heapBegin = ALIGN_UP(addr, locations.stackEnd);
+    locations.heapSize = locations.heapEnd - locations.heapBegin;
+    addr = 0x40000000;
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_ENTRY], &programMemory);
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_RODATA], &programMemory);
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_EXPORT_TABLE], &programMemory);
+    generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_TEXT], &programMemory);
+}
+
 static int ccvm_output_file(TCCState *s1, const char *filename)
 {
     TRACE("");
+
+    vecAlloc(programMemory, 1024);
+    vecAlloc(dataMemory, 1024);
 
     tcc_enter_state(s1);
 
@@ -691,6 +658,14 @@ static int ccvm_output_file(TCCState *s1, const char *filename)
     // Copy input sections into the output sections
     copySections(s1);
 
+    generateBytecode(s1);
+
+    FILE* f = fopen(filename, "wb");
+    fwrite(programMemory, 1, vecSize(programMemory), f);
+    fclose(f);
+
+    // TODO: Create reference graph and remove unused symbols, entry points are .ccvm.export.table and .ccvm.entry sections
+
     for (LinkSymbol** psym = link_symbols; psym < vecEnd(link_symbols); psym++) {
         LinkSymbol* sym = *psym;
         printf("Symbol '%s', sec '%s', 0x%08X, sz %d, if %s,%s\n", sym->name, sym->section ? sym->section->name : "NULL", sym->offset, sym->size, sym->interface_symbol ? sym->interface_symbol->name : "-", sym->is_automatic ? " AUTO,": "");
@@ -706,23 +681,6 @@ static int ccvm_output_file(TCCState *s1, const char *filename)
         printf("    section %d, %s %d %d %d\n", i, sec->name, (int)sec->data_offset, sec->sh_type, sec->sh_flags);
     }
 
-    /*Section elf_strtab = symtab_section->link;
-    for (int i = 0; i < elf_strtab->data_offset; i++) {
-        printf("%c", elf_strtab->data[i] ? elf_strtab->data[i] : '`');
-    }
-    printf("\n");
-    
-    ElfW(Sym) *sym;
-    for (int i = 0; i < symtab_section->data_offset; i += sizeof(*sym)) {
-        sym = (void*)&symtab_section->data[i];
-        printf("%d: 0x%08X 0x%04X 0x%04X '%s'\n", (int)(i / sizeof(*sym)), sym->st_value, sym->st_size, sym->st_other, &elf_strtab->data[sym->st_name]);
-    }
-
-    ElfW_Rel* rel;
-    for (int i = 0; i < relsec->data_offset; i += sizeof(*rel)) {
-        rel = (void*)&relsec->data[i];
-        printf("%d: 0x%08X sym=%d type=%d\n", (int)(i / sizeof(*rel)), rel->r_offset, ELF32_R_SYM(rel->r_info), ELF32_R_TYPE(rel->r_info));
-    }*/
     tcc_exit_state(s1);
     return 0;
 }
@@ -749,7 +707,7 @@ static int ccvm_patch_local_reloc(ElfW(Ehdr)* ehdr, ElfW(Shdr) *shdr, struct Sec
         printf("Patch %s by %d, label %d, source start %d\n", s->name, offseti, label_offset, offset);
         for (int i = offset / sizeof(LocalRelocEntry); i < s->data_offset / sizeof(LocalRelocEntry); i++) {
             LocalRelocEntry* entry = (LocalRelocEntry*)s->data + i;
-            switch (entry->type)
+            switch (entry->cmd)
             {
             case LOCAL_RELOC_ADDR:
                 printf("--- addr 0x%08X to 0x%08X\n", entry->source, entry->target);
@@ -782,7 +740,7 @@ static int ccvm_patch_local_reloc(ElfW(Ehdr)* ehdr, ElfW(Shdr) *shdr, struct Sec
 
         for (int i = offset / sizeof(LocalRelocEntry); i < s->data_offset / sizeof(LocalRelocEntry); i++) {
             LocalRelocEntry* entry = (LocalRelocEntry*)s->data + i;
-            switch (entry->type)
+            switch (entry->cmd)
             {
             case LOCAL_RELOC_ADDR:
                 printf("--- addr 0x%08X to 0x%08X\n", entry->source, entry->target);

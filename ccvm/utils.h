@@ -15,6 +15,9 @@
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #endif
 
+#define ALIGN_UP(value, alignment) (((value) + (alignment) - 1) & ~((alignment) - 1))
+#define ALIGN_DOWN(value, alignment) ((value) & ~((alignment) - 1))
+
 #define VEC
 
 #define vecFree(ptr) _vecFree((void**)&ptr)

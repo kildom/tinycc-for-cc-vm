@@ -1,5 +1,5 @@
 
-#include "ccvm-localreloc.h"
+#include "ccvm-reloc.h"
 
 
 static void g8(int c)

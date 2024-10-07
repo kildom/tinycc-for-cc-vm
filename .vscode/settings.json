@@ -15,6 +15,11 @@
         "string_view": "c",
         "ccvm-link.h": "c",
         "vector": "cpp",
-        "algorithm": "c"
+        "algorithm": "c",
+        "ccvm-reloc.h": "c",
+        "stdint.h": "c",
+        "compare": "c",
+        "*.tcc": "c",
+        "initializer_list": "c"
     }
 }

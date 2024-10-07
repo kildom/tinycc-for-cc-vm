@@ -58,7 +58,7 @@ enum {
 #include "tcc.h"
 
 #include "ccvm-instr.c"
-#include "ccvm-localreloc.c"
+#include "ccvm-reloc.c"
 #include "ccvm-output.c"
 #include "ccvm-link.c"
 
@@ -143,7 +143,7 @@ void load(int r, SValue *sv)
             /* constant memory reference */
             if (fr & VT_SYM) {
                 int address = instrReadConst(r, 0, bits, sign_extend, 0);
-                addReloc(sv->sym, address);
+                addReloc(sv->sym, address, RELOC_INSTR_ABSOLUTE);
             } else {
                 instrReadConst(r, fc, bits, sign_extend, 0);
             }
@@ -159,8 +159,8 @@ void load(int r, SValue *sv)
         if (v == VT_CONST) {
 
             if (fr & VT_SYM) {
-                int address = instrMovConst(r, 0);
-                addReloc(sv->sym, address);
+                int address = instrMovReloc(r);
+                addReloc(sv->sym, address, RELOC_INSTR_ABSOLUTE);
             } else {
                 instrMovConst(r, fc);
             }
@@ -230,7 +230,7 @@ void store(int r, SValue *v)
             /* constant memory reference */
             if (fr & VT_SYM) {
                 int address = instrWriteConst(r, 0, bits, 0);
-                addReloc(v->sym, address);
+                addReloc(v->sym, address, RELOC_INSTR_ABSOLUTE);
             } else {
                 instrWriteConst(r, fc, bits, 0);
             }
@@ -258,7 +258,7 @@ static void gcall_or_jmp(int is_jmp)
 {
     if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
         uint32_t address = is_jmp ? instrJumpConst() : instrCallConst();
-        addReloc(vtop->sym, address);
+        addReloc(vtop->sym, address, RELOC_INSTR_RELATIVE0);
     } else {
         int r = gv(RC_INT);
         if (is_jmp) {
@@ -312,7 +312,7 @@ void gfunc_call(int nb_args)
             // allocate register to store the address
             int r = get_reg(RC_INT);
             // allocate the necessary size on stack
-            instrPushBlock(r, offsets[arg_index + 1] - offsets[arg_index]);
+            instrPushBlockConst(r, offsets[arg_index + 1] - offsets[arg_index]);
             // generate code that copies the structure to newly allocated stack buffer
             vset(&vtop->type, r | VT_LVAL, 0);
             vswap();
@@ -385,9 +385,11 @@ void gfunc_prolog(Sym *func_sym)
         ...
     */
 
+    loc = 0;
+
     DEBUG_COMMENT("Function %s", get_tok_str(func_sym->v, NULL));
 
-    prologue_ind = instrPushBlock(0, 0);
+    prologue_ind = instrPushBlockReloc(0);
 
     for(param = sym->next; param; param = param->next) {
         // Get parameter information
@@ -411,13 +413,8 @@ void gfunc_prolog(Sym *func_sym)
 void gfunc_epilog(void)
 {
     int loc_aligned = (-loc + 3) & -4;
-    if (loc_aligned != 0) {
-        int tmp_ind = ind;
-        ind = prologue_ind;
-        DEBUG_COMMENT("Adjusting function prologue to %d", loc_aligned);
-        g32(loc_aligned);
-        ind = tmp_ind;
-    }
+    addLocalReloc(LOCAL_RELOC_CONST, loc_aligned, prologue_ind, RELOC_INSTR_ABSOLUTE + RELOC_ADD_FLAG_CONST);
+    DEBUG_COMMENT("Adjusting function prologue to %d", loc_aligned);
     instrReturn(epilogue_ret_cleanup);
 }
 
@@ -431,7 +428,7 @@ ST_FUNC int gjmp(int t)
 {
     t = get_label(t);
     int addr = instrJumpConst();
-    addLocalReloc(LOCAL_RELOC_LABEL, t, addr);
+    addLocalReloc(LOCAL_RELOC_LABEL, t, addr, RELOC_INSTR_RELATIVE0);
     return t;
 }
 
@@ -439,7 +436,7 @@ ST_FUNC int gjmp(int t)
 ST_FUNC void gjmp_addr(int a)
 {
     int addr = instrJumpConst();
-    addLocalReloc(LOCAL_RELOC_ADDR, a, addr);
+    addLocalReloc(LOCAL_RELOC_ADDR, a, addr, RELOC_INSTR_RELATIVE0);
 }
 
 const char* tok_to_str(int tok) {
@@ -470,7 +467,7 @@ const char* tok_to_str(int tok) {
 ST_FUNC int gjmp_cond(int op, int t)
 {
     int addr = instrJumpCond(op);
-    addLocalReloc(LOCAL_RELOC_LABEL, t, addr);
+    addLocalReloc(LOCAL_RELOC_LABEL, t, addr, RELOC_INSTR_RELATIVE1);
     return t;
 }
 
@@ -479,7 +476,7 @@ ST_FUNC int gjmp_append(int n, int t)
     int r;
     if (n) {
         if (t && t != n) {
-            addLocalReloc(LOCAL_RELOC_ALIAS_LABEL, t, n);
+            addLocalReloc(LOCAL_RELOC_ALIAS_LABEL, t, n, 0);
             return n;
         } else {
             return n;
@@ -497,6 +494,8 @@ void gen_opi(int op)
     DEBUG_COMMENT("0x%04X %c (0x%02X) 0x%04X", vtop[-1].r, op, op, vtop[0].r);
     switch (op)
     {
+    case TOK_ADDC1:
+    case TOK_ADDC2:
     case TOK_SAR:
     case '+':
     case '*': {
@@ -541,7 +540,7 @@ void gen_opi(int op)
     default:
         break;
     }
-    tcc_error("gen_opi unimplemented");
+    tcc_error("gen_opi unimplemented 0x%02X", op);
 }
 
 /* generate a floating point operation 'v = t1 op t2' instruction. The
@@ -602,7 +601,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align)
 
 ST_FUNC void gsym_addr(int t, int a)
 {
-    addLocalReloc(LOCAL_RELOC_SET_LABEL, a, t);
+    addLocalReloc(LOCAL_RELOC_SET_LABEL, a, t, 0);
 }
 
 /*************************************************************/
@@ -646,5 +645,5 @@ TODO:
   * main function is called as any other exported function, but when generating
     sample host code, we can generate more sophisticated wrapper. It will
     get argc and argv as arguments, push them into the stack and call exported main.
-
+* Why Ubuntu 20 on GH Actions doesn't work?
 */

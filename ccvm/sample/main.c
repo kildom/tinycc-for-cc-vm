@@ -6,6 +6,27 @@ CCVM_IMPORT(3, print);
 
 void print(char* str);
 
+int fy(short c, char x, short z) {
+back:
+    if (c == 0 ? x == 12 && z == 34 : x == 99) {
+        x++;
+    }
+    while (c != 1) {
+        c += 2;
+        x += 3;
+        a();
+        if (x > 12) goto non12;
+    }
+    return x;
+non12:
+    goto back;
+}
+
+long long fll(long long x, long long y, long long z)
+{
+    return (x * x + y * y + z * z) * (x + 1);
+}
+
 __attribute__((weak))
 void fx() {
     a();
@@ -109,6 +130,12 @@ __attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_export_t
 __attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_text_begin;
 __attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_text_end;
 __attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_text_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_stack_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_stack_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_stack_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_heap_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_heap_initial_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_heap_initial_size;
 
 void* ret_bss() {
     return &__ccvm_section_bss_begin;

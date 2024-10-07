@@ -1,5 +1,5 @@
 
-#include "ccvm-localreloc.h"
+#include "ccvm-reloc.h"
 
 
 #define SHT_LOCAL_RELOC (SHT_LOUSER + 0x82FE91A)
@@ -28,7 +28,7 @@ static void setupLocalReloc() {
 }
 
 
-static void addLocalReloc(int type, uint32_t source, uint32_t target) {
+static void addLocalReloc(int cmd, uint32_t source, uint32_t target, uint32_t type) {
     if (!local_reloc_section || local_reloc_section->link != cur_text_section) {
         setupLocalReloc();
     }
@@ -42,10 +42,11 @@ static void addLocalReloc(int type, uint32_t source, uint32_t target) {
     entry->note_type = LOCAL_RELOC_NOTE_TYPE;
     entry->note_name[0] = LOCAL_RELOC_NOTE_NAME0;
     entry->note_name[1] = LOCAL_RELOC_NOTE_NAME1;
-    entry->type = type;
+    entry->cmd = cmd;
     entry->source = source;
     entry->target = target;
-    switch (type)
+    entry->type = type;
+    switch (cmd)
     {
     case LOCAL_RELOC_ADDR:
         DEBUG_COMMENT("LocalReloc: from 0x%08X to 0x%08X", source, target);
@@ -58,6 +59,9 @@ static void addLocalReloc(int type, uint32_t source, uint32_t target) {
         break;
     case LOCAL_RELOC_ALIAS_LABEL:
         DEBUG_COMMENT("LocalReloc: alias label_%d = label_%d", source, target);
+        break;
+    case LOCAL_RELOC_CONST:
+        DEBUG_COMMENT("LocalReloc: const 0x%08X = %d", target, source);
         break;
     default:
         break;
@@ -79,7 +83,7 @@ static int patchLocalReloc(LocalRelocEntry* entry, int addr_offset, int label_of
         return size;
     }
 
-    switch (entry->type)
+    switch (entry->cmd)
     {
     case LOCAL_RELOC_ADDR:
         entry->source += addr_offset;
@@ -100,6 +104,9 @@ static int patchLocalReloc(LocalRelocEntry* entry, int addr_offset, int label_of
         entry->target += label_offset;
         if (entry->source >= *next_label) *next_label = entry->source + 1;
         if (entry->target >= *next_label) *next_label = entry->target + 1;
+        break;
+    case LOCAL_RELOC_CONST:
+        entry->target += addr_offset;
         break;
     default:
         break;
