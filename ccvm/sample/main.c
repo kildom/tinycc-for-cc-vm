@@ -52,3 +52,64 @@ __attribute__((weak))
 void __ccvm_invalid_export_handler() {
 
 }
+
+__attribute__((section(".ccvm.registers")))
+struct {
+    unsigned R0;
+    unsigned X0;
+    unsigned R1;
+    unsigned X1;
+    unsigned R2;
+    unsigned X2;
+    unsigned R3;
+    unsigned X3;
+    unsigned SP;
+    unsigned PC;
+    unsigned BP;
+    unsigned BP2;
+    unsigned char initialized;
+} __ccvm_registers;
+
+static void _ccvm_entry() {
+
+}
+
+#define INSTR_JUMP_CONST 5
+
+__attribute__((section(".ccvm.entry")))
+__attribute__((packed))
+struct
+{
+    unsigned char opcode;
+    unsigned int address;
+} __attribute__((packed)) __ccvm_entry_instruction __attribute__((packed)) = {
+    INSTR_JUMP_CONST,
+    (unsigned int)&_ccvm_entry,
+};
+
+
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_registers_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_registers_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_registers_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_data_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_data_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_data_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_bss_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_bss_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_bss_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_entry_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_entry_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_entry_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_rodata_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_rodata_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_rodata_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_export_table_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_export_table_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_ccvm_export_table_size;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_text_begin;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_text_end;
+__attribute__((section(".ccvm.link.symbols"))) char __ccvm_section_text_size;
+
+void* ret_bss() {
+    return &__ccvm_section_bss_begin;
+}

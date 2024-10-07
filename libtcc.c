@@ -256,23 +256,194 @@ LIBTCCAPI void tcc_set_realloc(TCCReallocFunc *realloc)
 #undef tcc_mallocz
 #undef tcc_strdup
 
-PUB_FUNC void tcc_free(void *ptr)
+PUB_FUNC void tcc_free2(void *ptr)
 {
     reallocator(ptr, 0);
 }
 
-PUB_FUNC void *tcc_malloc(unsigned long size)
+PUB_FUNC void *tcc_malloc2(unsigned long size)
 {
     return reallocator(0, size);
 }
 
-PUB_FUNC void *tcc_realloc(void *ptr, unsigned long size)
+PUB_FUNC void *tcc_realloc2(void *ptr, unsigned long size)
 {
     return reallocator(ptr, size);
 }
 
+PUB_FUNC void *tcc_mallocz2(unsigned long size)
+{
+    void *ptr;
+    ptr = tcc_malloc2(size);
+    if (size)
+        memset(ptr, 0, size);
+    return ptr;
+}
+
+PUB_FUNC char *tcc_strdup2(const char *str)
+{
+    char *ptr;
+    ptr = tcc_malloc2(strlen(str) + 1);
+    strcpy(ptr, str);
+    return ptr;
+}
+
+#define MEM_DEBUG_MAGIC_ALLOCATED 0x9bcb2782508b89F1uLL // 11226109936801647089
+#define MEM_DEBUG_MAGIC_FREE 0xa34229ed7c92ef8euLL
+
+typedef struct MemDebugHeader {
+    uint64_t free;
+    uint64_t words;
+    const char* trace;
+    struct MemDebugHeader* next;
+    uint64_t *magic2;
+    uint64_t magic1[16];
+} MemDebugHeader;
+
+struct
+{
+    MemDebugHeader h;
+    uint64_t content;
+    uint64_t magic2[16];
+} tmp = {
+    .h = {
+        .free = 1,
+        .words = 1,
+        .next = NULL,
+        .magic2 = tmp.magic2,
+        .magic1 = {
+            MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+            MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+            MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+            MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+        },
+    },
+    .content = MEM_DEBUG_MAGIC_FREE,
+    .magic2 = {
+        MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+        MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+        MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+        MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+    },
+};
+
+uint64_t magic_allocated[] = {
+    MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED,
+    MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED,
+    MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED,
+    MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED, MEM_DEBUG_MAGIC_ALLOCATED,
+};
+
+uint64_t magic_free[] = {
+    MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+    MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+    MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+    MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE, MEM_DEBUG_MAGIC_FREE,
+};
+
+
+MemDebugHeader* first = &tmp.h;
+MemDebugHeader* last = &tmp.h;
+
+char traceText[65536];
+char* traceText2 = traceText;
+int traceSize = 0;
+
+void memError(const char * t, const char * trace)
+{
+    printf("MEM_ERROR: %s\n--CurrentTrace:\n%s\n--AllocationTrace:\n%s\n", t, traceText, trace);
+
+    while (1);
+}
+
+int _pushTrace(const char *text, ...) {
+    if (traceSize + 2048 > sizeof(traceText)) {
+        memError("Out of trace buffer", "???");
+    }
+    va_list ap;
+    va_start(ap, text);
+    int old = traceSize;
+    traceSize += vsprintf(traceText + traceSize, text, ap);
+    return old;
+}
+
+void _traceExit(int* p) {
+    traceSize = *p;
+}
+
+#define TRACE(text, ...) \
+    __attribute__((cleanup(_traceExit))) \
+    int _trace_var = _pushTrace("%s " text "\n", __FUNCTION__, ##__VA_ARGS__);
+
+void globalMemCheck()
+{
+    MemDebugHeader* h = first;
+    while (h) {
+        uint64_t* data = (uint64_t*)(h + 1);
+        if (h->free) {
+            if (memcmp(h->magic1, magic_free, sizeof(magic_free))) memError("Magic 1 on deallocated", h->trace);
+            if (memcmp(h->magic2, magic_free, sizeof(magic_free))) memError("Magic 2 on deallocated", h->trace);
+            for (int i = 0; i < h->words; i++) {
+                if (data[i] != MEM_DEBUG_MAGIC_FREE) memError("Content on deallocated", h->trace);
+            }
+        } else {
+            if (memcmp(h->magic1, magic_allocated, sizeof(magic_allocated))) memError("Magic 1 on allocated", h->trace);
+            if (memcmp(h->magic2, magic_allocated, sizeof(magic_allocated))) memError("Magic 2 on allocated", h->trace);
+        }
+        h = h->next;
+    }
+}
+
+PUB_FUNC void tcc_free(void *ptr)
+{
+    globalMemCheck();
+    if (ptr == NULL) return;
+    MemDebugHeader* h = (MemDebugHeader*)ptr - 1;
+    uint64_t* data = (uint64_t*)(h + 1);
+    if (h->free) memError("Double free", h->trace);
+    h->free = 1;
+    for (int i = 0; i < h->words; i++) {
+        data[i] = MEM_DEBUG_MAGIC_FREE;
+    }
+    memcpy(h->magic1, magic_free, sizeof(magic_free));
+    memcpy(h->magic2, magic_free, sizeof(magic_free));
+}
+
+PUB_FUNC void *tcc_malloc(unsigned long size)
+{
+    TRACE("");
+    globalMemCheck();
+    size = (size + 7) & ~7;
+    MemDebugHeader* h = tcc_malloc2(sizeof(MemDebugHeader) + size + sizeof(magic_allocated));
+    h->free = 0;
+    h->words = size / 8;
+    h->next = NULL;
+    h->trace = tcc_strdup2(traceText);
+    last->next = h;
+    memcpy(h->magic1, magic_allocated, sizeof(magic_allocated));
+    h->magic2 = (uint64_t*)(h + 1) + h->words;
+    memcpy(h->magic2, magic_allocated, sizeof(magic_allocated));
+    memset(h + 1, 0xFA, size);
+    return (uint64_t*)(h + 1);
+}
+
+PUB_FUNC void *tcc_realloc(void *ptr, unsigned long size)
+{
+    TRACE("");
+    if (ptr == NULL) return tcc_malloc(size);
+    MemDebugHeader* h = (MemDebugHeader*)ptr - 1;
+    if (h->free) memError("Realloc free", h->trace);
+    size_t copySize = 8 * h->words;
+    void* p = tcc_malloc(size);
+    if (size < copySize) copySize = size;
+    memcpy(p, ptr, copySize);
+    tcc_free(ptr);
+    return p;
+}
+
 PUB_FUNC void *tcc_mallocz(unsigned long size)
 {
+    TRACE("");
     void *ptr;
     ptr = tcc_malloc(size);
     if (size)
@@ -282,10 +453,46 @@ PUB_FUNC void *tcc_mallocz(unsigned long size)
 
 PUB_FUNC char *tcc_strdup(const char *str)
 {
+    TRACE("");
     char *ptr;
     ptr = tcc_malloc(strlen(str) + 1);
     strcpy(ptr, str);
     return ptr;
+}
+
+bool invalidOrOverlapping(const void* start1, const void* end1, const void* start2, const void* end2) {
+    uintptr_t s1 = (uintptr_t)start1;
+    uintptr_t e1 = (uintptr_t)end1;
+    uintptr_t s2 = (uintptr_t)start2;
+    uintptr_t e2 = (uintptr_t)end2;
+    if (e1 < s1) return true;
+    if (e2 < s2) return true;
+    if (s1 < s2) {
+        return e1 > s2;
+    } else if (s1 < e2) {
+        return true;
+    }
+    return false;
+}
+
+void my_memset(void* to, int from, size_t size)
+{
+    MemDebugHeader* h = first;
+    while (h) {
+        uint64_t* data = (uint64_t*)(h + 1);
+        char* to_begin = to;
+        char* to_end = to_begin + size;
+        if (h->free) {
+            if (invalidOrOverlapping(to_begin, to_end, h, h->magic2 + sizeof(magic_allocated))) return memError("memset on free", h->trace);
+        } else {
+            if (invalidOrOverlapping(to_begin, to_end, h, data)) return memError("memset overlapping", h->trace);
+            if (invalidOrOverlapping(to_begin, to_end, h->magic2, h->magic2 + sizeof(magic_allocated))) return memError("memset overlapping", h->trace);
+        }
+        h = h->next;
+    }
+#undef memset
+    memset(to, from, size);
+#define memset my_memset
 }
 
 #ifdef MEM_DEBUG
@@ -1123,6 +1330,7 @@ check_success:
 
 LIBTCCAPI int tcc_add_file(TCCState *s, const char *filename)
 {
+    printf("===================FILE============================     %s\n", filename);
     int filetype = s->filetype;
     if (0 == (filetype & AFF_TYPE_MASK)) {
         /* use a file extension to detect a filetype */

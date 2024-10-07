@@ -113,4 +113,14 @@ LIBTCCAPI void tcc_set_backtrace_func(TCCState *s1, void* userdata, TCCBtFunc*);
 }
 #endif
 
+int _pushTrace(const char *text, ...);
+void _traceExit(int* p);
+
+#define TRACE(text, ...) \
+    __attribute__((cleanup(_traceExit))) \
+    int _trace_var = _pushTrace("%s " text "\n", __FUNCTION__, ##__VA_ARGS__);
+
+void my_memset(void* to, int from, size_t size);
+#define memset my_memset
+
 #endif

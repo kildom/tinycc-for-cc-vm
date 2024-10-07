@@ -40,7 +40,8 @@ static void addLocalReloc(int type, uint32_t source, uint32_t target) {
     entry->note_namesz = LOCAL_RELOC_NOTE_NAMESZ;
     entry->note_descsz = LOCAL_RELOC_NOTE_DESCSZ;
     entry->note_type = LOCAL_RELOC_NOTE_TYPE;
-    entry->note_name = LOCAL_RELOC_NOTE_NAME;
+    entry->note_name[0] = LOCAL_RELOC_NOTE_NAME0;
+    entry->note_name[1] = LOCAL_RELOC_NOTE_NAME1;
     entry->type = type;
     entry->source = source;
     entry->target = target;
@@ -72,7 +73,8 @@ static int patchLocalReloc(LocalRelocEntry* entry, int addr_offset, int label_of
     if (entry->note_namesz != LOCAL_RELOC_NOTE_NAMESZ
         || entry->note_descsz != LOCAL_RELOC_NOTE_DESCSZ
         || entry->note_type != LOCAL_RELOC_NOTE_TYPE
-        || entry->note_name != LOCAL_RELOC_NOTE_NAME
+        || entry->note_name[0] != LOCAL_RELOC_NOTE_NAME0
+        || entry->note_name[1] != LOCAL_RELOC_NOTE_NAME1
     ) {
         return size;
     }
