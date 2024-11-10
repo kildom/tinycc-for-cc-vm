@@ -88,8 +88,6 @@ int get_label(int t) {
     return t;
 }
 
-#define OUT(text, ...) printf("------------------- %08X:   " text "\n", ind, ##__VA_ARGS__)
-
 /* load 'r' from value 'sv' */
 void load(int r, SValue *sv)
 {
@@ -142,25 +140,23 @@ void load(int r, SValue *sv)
         if ((fr & VT_VALMASK) == VT_CONST) {
             /* constant memory reference */
             if (fr & VT_SYM) {
-                int address = instrReadConst(r, 0, bits, sign_extend, 0);
-                addReloc(sv->sym, address, RELOC_INSTR_ABSOLUTE);
+                instrRWReloc(1, sv->sym, r, bits, sign_extend);
             } else {
-                instrReadConst(r, fc, bits, sign_extend, 0);
+                instrRWConst(1, r, fc, bits, sign_extend, 0);
             }
             return;
         } else if ((fr & VT_VALMASK) == VT_LOCAL) {
-            instrReadConst(r, fc, bits, sign_extend, 1);
+            instrRWConst(1, r, fc, bits, sign_extend, 1);
             return;
         } else {
-            instrReadInd(r, sv->r & VT_VALMASK, bits, sign_extend);
+            instrRWInd(1, r, sv->r & VT_VALMASK, bits, sign_extend);
             return;
         }
     } else {
         if (v == VT_CONST) {
 
             if (fr & VT_SYM) {
-                int address = instrMovReloc(r);
-                addReloc(sv->sym, address, RELOC_INSTR_ABSOLUTE);
+                instrMovReloc(r, sv->sym);
             } else {
                 instrMovConst(r, fc);
             }
@@ -229,15 +225,14 @@ void store(int r, SValue *v)
         if ((fr & VT_VALMASK) == VT_CONST) {
             /* constant memory reference */
             if (fr & VT_SYM) {
-                int address = instrWriteConst(r, 0, bits, 0);
-                addReloc(v->sym, address, RELOC_INSTR_ABSOLUTE);
+                instrRWReloc(0, v->sym, r, bits, 0);
             } else {
-                instrWriteConst(r, fc, bits, 0);
+                instrRWConst(0, r, fc, bits, 0, 0);
             }
         } else if ((fr & VT_VALMASK) == VT_LOCAL) {
-            instrWriteConst(r, fc, bits, 1);
+            instrRWConst(0, r, fc, bits, 0, 1);
         } else {
-            instrWriteInd(r, v->r & VT_VALMASK, bits);
+            instrRWInd(0, r, v->r & VT_VALMASK, bits, 0);
         }
     } else if (fr != r) {
         instrMovReg(r, fr);
@@ -257,15 +252,10 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 static void gcall_or_jmp(int is_jmp)
 {
     if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
-        uint32_t address = is_jmp ? instrJumpConst() : instrCallConst();
-        addReloc(vtop->sym, address, RELOC_INSTR_RELATIVE0);
+        instrJumpReloc(!is_jmp, vtop->sym);
     } else {
         int r = gv(RC_INT);
-        if (is_jmp) {
-            instrJumpReg(r);
-        } else {
-            instrCallReg(r);
-        }
+        instrJumpReg(!is_jmp, r);
     }
 }
 
@@ -355,8 +345,8 @@ void gfunc_call(int nb_args)
     FREE_OR_STACK(offsets);
 }
 
-static int prologue_ind;
 static int epilogue_ret_cleanup;
+static int prologue_push_label;
 
 /* generate function prolog of type 't' */
 void gfunc_prolog(Sym *func_sym)
@@ -389,7 +379,8 @@ void gfunc_prolog(Sym *func_sym)
 
     DEBUG_COMMENT("Function %s", get_tok_str(func_sym->v, NULL));
 
-    prologue_ind = instrPushBlockReloc(0);
+    prologue_push_label = get_label(0);
+    instrPushBlockLabel(0, prologue_push_label);
 
     for(param = sym->next; param; param = param->next) {
         // Get parameter information
@@ -413,7 +404,7 @@ void gfunc_prolog(Sym *func_sym)
 void gfunc_epilog(void)
 {
     int loc_aligned = (-loc + 3) & -4;
-    addLocalReloc(LOCAL_RELOC_CONST, loc_aligned, prologue_ind, RELOC_INSTR_ABSOLUTE + RELOC_ADD_FLAG_CONST);
+    instrLabel(prologue_push_label, 0, loc_aligned);
     DEBUG_COMMENT("Adjusting function prologue to %d", loc_aligned);
     instrReturn(epilogue_ret_cleanup);
 }
@@ -427,16 +418,16 @@ ST_FUNC void gen_fill_nops(int bytes)
 ST_FUNC int gjmp(int t)
 {
     t = get_label(t);
-    int addr = instrJumpConst();
-    addLocalReloc(LOCAL_RELOC_LABEL, t, addr, RELOC_INSTR_RELATIVE0);
+    instrJumpLabel(t);
     return t;
 }
 
 /* generate a jump to a fixed address */
 ST_FUNC void gjmp_addr(int a)
 {
-    int addr = instrJumpConst();
-    addLocalReloc(LOCAL_RELOC_ADDR, a, addr, RELOC_INSTR_RELATIVE0);
+    int label = get_label(0);
+    instrLabel(label, 1, a - ind);
+    instrJumpLabel(label);
 }
 
 const char* tok_to_str(int tok) {
@@ -466,8 +457,7 @@ const char* tok_to_str(int tok) {
 
 ST_FUNC int gjmp_cond(int op, int t)
 {
-    int addr = instrJumpCond(op);
-    addLocalReloc(LOCAL_RELOC_LABEL, t, addr, RELOC_INSTR_RELATIVE1);
+    instrJumpCondLabel(op, t);
     return t;
 }
 

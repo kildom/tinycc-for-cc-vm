@@ -10,272 +10,68 @@
 
 
 enum {
-    INSTR_MOV,
-    INSTR_JUMP,
-    INSTR_CALL,
-    INSTR_PUSH_BLOCK,
-    INSTR_RETURN,
-    INSTR_JUMP_IF,
-    INSTR_READF64,
-    INSTR_READ32,
-    INSTR_READS8,
-    INSTR_READS16,
-    INSTR_READU8,
-    INSTR_READU16,
-    INSTR_WRITEF64,
-    INSTR_WRITE32,
-    INSTR_WRITE8,
-    INSTR_WRITE16,
-    INSTR_PUSH8,
-    INSTR_PUSH16,
-    INSTR_PUSH24,
-    INSTR_PUSH32,
-    INSTR_BIN_OP,
-    INSTR_CMP,
-
-    INSTR_FLAG_BP = 0x80,
-    INSTR_FLAG_PROG = 0x40,
-    INSTR_FLAG_IMM32 = 0x18,
-    INSTR_FLAG_IMM16 = 0x10,
-    INSTR_FLAG_IMM8 = 0x08,
-    INSTR_FLAG_REG = 0x00,
+    INSTR_MOV_REG,          // dstReg = srcReg
+    INSTR_MOV_CONST,        // reg = value
+    INSTR_LABEL_RELATIVE,   // label, address_offset
+    INSTR_LABEL_ABSOLUTE,   // label, address_offset
+    INSTR_WRITE_CONST,      // reg => [value]
+    INSTR_READ_CONST,       // reg <= [value]
+    INSTR_WRITE_REG,        // reg => [addrReg]
+    INSTR_READ_REG,         // reg <= [addrReg]
+    INSTR_JUMP_COND_LABEL,  // label, op2 = condition
+    INSTR_JUMP_CONST,       // address
+    INSTR_CALL_CONST,       // address
+    INSTR_JUMP_LABEL,       // label
+    INSTR_JUMP_REG,         // reg
+    INSTR_CALL_REG,         // reg
+    INSTR_PUSH,             // reg, op2 = 1..4 bytes
+    INSTR_PUSH_BLOCK_CONST, // reg, value = block size
+    INSTR_PUSH_BLOCK_LABEL, // reg, label = label containing block size
+    INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
+    INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
+    INSTR_RETURN,           // value = cleanup words
 };
 
 
-static void gImm(int value, int flags)
+typedef struct CCVMInstr {
+    union {
+        struct {
+            uint8_t opcode;
+            uint8_t op2;
+            union {
+                uint8_t reg;
+                uint8_t dstReg;
+            };
+            union {
+                uint8_t srcReg;
+                uint8_t addrReg;
+            };
+        };
+        int32_t address_offset;
+    };
+    union {
+        uint32_t value;
+        uint32_t address;
+        uint32_t label;
+    };
+} CCVMInstr;
+
+
+static CCVMInstr* genInstr(uint8_t opcode)
 {
-    if (value < 128 && value >= -128) {
-        g8(INSTR_FLAG_IMM8 | flags);
-        g8(value);
-    } else if (value < 32768 && value >= -32768) {
-        g8(INSTR_FLAG_IMM16 | flags);
-        g16(value);
-    } else if (value < 0x40000000 + 128 && value >= 0x40000000 - 128) {
-        g8(INSTR_FLAG_IMM8 | INSTR_FLAG_PROG | flags);
-        g8(value - 0x40000000);
-    } else if (value < 0x40000000 + 32768 && value >= 0x40000000 - 32768) {
-        g8(INSTR_FLAG_IMM16 | INSTR_FLAG_PROG | flags);
-        g16(value - 0x40000000);
-    } else {
-        g8(INSTR_FLAG_IMM32 | flags);
-        g32(value);
+    int ind1;
+    if (nocode_wanted) {
+        static CCVMInstr dummy;
+        return &dummy;
     }
-}
-
-static int instrMovReloc(int reg) {
-    DEBUG_INSTR("MOV_CONST R%d = [...reloc...]", reg);
-    g8(INSTR_MOV);
-    g8(INSTR_FLAG_IMM32);
-    int ret = ind;
-    g32(0);
-    g8(reg);
-    return ret;
-}
-
-static void instrMovConst(int reg, uint32_t value) {
-    DEBUG_INSTR("MOV_CONST R%d = 0x%08X", reg, value);
-    g8(INSTR_MOV);
-    gImm(value, 0);
-    g8(reg);
-}
-
-static void instrMovReg(int to, int from) {
-    DEBUG_INSTR("MOV_REG R%d = R%d", to, from);
-    g8(INSTR_MOV);
-    g8(INSTR_FLAG_REG);
-    g8(from);
-    g8(to);
-}
-
-static void instrJumpReg(int reg) {
-    DEBUG_INSTR("JUMP_REG R%d", reg);
-    g8(INSTR_JUMP);
-    g8(INSTR_FLAG_REG);
-    g8(reg);
-}
-
-static void instrCallReg(int reg) {
-    DEBUG_INSTR("CALL_REG R%d", reg);
-    g8(INSTR_CALL);
-    g8(INSTR_FLAG_REG);
-    g8(reg);
-}
-
-
-static int instrJumpConst() {
-    DEBUG_INSTR("JUMP_CONST [...reloc...]");
-    g8(INSTR_JUMP);
-    g8(INSTR_FLAG_IMM32);
-    int address = ind;
-    g32(0);
-    return address;
-}
-
-static int instrCallConst() {
-    DEBUG_INSTR("CALL_CONST [...reloc...]");
-    g8(INSTR_CALL);
-    g8(INSTR_FLAG_IMM32);
-    int address = ind;
-    g32(0);
-    return address;
-}
-
-static void instrPush(int bits, int reg) {
-    int instr = INSTR_PUSH8;
-    switch (bits)
-    {
-        case 8: instr = INSTR_PUSH8; break;
-        case 16: instr = INSTR_PUSH16; break;
-        case 24: instr = INSTR_PUSH24; break;
-        case 32: instr = INSTR_PUSH32; break;
-        default: tcc_error("Internal error: invalid number of bits to push."); break;
-    }
-    DEBUG_INSTR("PUSH%d R%d", bits, reg);
-    g8(instr);
-    g8(INSTR_FLAG_REG);
-    g8(reg);
-}
-
-static int instrPushBlockReloc(int reg) {
-    DEBUG_INSTR("PUSH_BLOCK R%d, [...reloc...]", reg);
-    g8(INSTR_PUSH_BLOCK);
-    g8(INSTR_FLAG_IMM32);
-    int ret = ind;
-    g32(0);
-    g8(reg);
-    return ret;
-}
-
-static void instrPushBlockConst(int reg, int size) {
-    DEBUG_INSTR("PUSH_BLOCK R%d, %d", reg, size);
-    g8(INSTR_PUSH_BLOCK);
-    gImm(size, 0);
-    g8(reg);
-}
-
-static void instrReturn(int cleanupWords) {
-    DEBUG_INSTR("RETURN %d", cleanupWords);
-    g8(INSTR_RETURN);
-    gImm(cleanupWords, 0);
-}
-
-
-static int instrJumpCond(int op) {
-    DEBUG_INSTR("JUMP_IF 0x%02X [...reloc...]", op);
-    g8(INSTR_JUMP_IF);
-    g8(INSTR_FLAG_IMM32);
-    int address = ind;
-    g32(0);
-    g8(op);
-    return address;
-}
-
-static void instrBinOp(int op, int a, int b)
-{
-    DEBUG_INSTR("BIN_OP 0x%02X R%d R%d", op, a, b);
-    g8(INSTR_BIN_OP);
-    g8(INSTR_FLAG_REG);
-    g8(b);
-    g8(a);
-    g8(op);
-}
-
-static void instrCmp(int a, int b)
-{
-    DEBUG_INSTR("CMP R%d R%d", a, b);
-    g8(INSTR_CMP);
-    g8(INSTR_FLAG_REG);
-    g8(a);
-    g8(b);
-}
-
-
-static int instrReadConst(int reg, int value, int bits, int sign_extend, int bp)
-{
-    const char *bpStr = "";
-    if (bp) {
-        bpStr = "[BP] - ";
-        value = -value;
-    }
-    if (bits == 64) {
-        DEBUG_INSTR("READF64 X%d, %s0x%08X", reg, bpStr, value);
-        g8(INSTR_READF64);
-    } else if (bits == 32) {
-        DEBUG_INSTR("READ32 R%d, %s0x%08X", reg, bpStr, value);
-        g8(INSTR_READ32);
-    } else if (sign_extend) {
-        DEBUG_INSTR("READS%d R%d, %s0x%08X", bits, reg, bpStr, value);
-        g8(bits == 8 ? INSTR_READS8 : INSTR_READS16);
-    } else {
-        DEBUG_INSTR("READU%d R%d, %s0x%08X", bits, reg, bpStr, value);
-        g8(bits == 8 ? INSTR_READU8 : INSTR_READU16);
-    }
-    g8(INSTR_FLAG_IMM32 | (bp ? INSTR_FLAG_BP : 0));
-    int ret = ind;
-    g32(value);
-    g8(reg);
-    return ret;
-}
-
-static void instrReadInd(int to, int from, int bits, int sign_extend)
-{
-    if (bits == 64) {
-        DEBUG_INSTR("READF64 X%d, [R%d]", to, from);
-        g8(INSTR_READF64);
-    } else if (bits == 32) {
-        DEBUG_INSTR("READ32 R%d, [R%d]", to, from);
-        g8(INSTR_READ32);
-    } else if (sign_extend) {
-        DEBUG_INSTR("READS%d R%d, [R%d]", bits, to, from);
-        g8(bits == 8 ? INSTR_READS8 : INSTR_READS16);
-    } else {
-        DEBUG_INSTR("READU%d R%d, [R%d]", bits, to, from);
-        g8(bits == 8 ? INSTR_READU8 : INSTR_READU16);
-    }
-    g8(INSTR_FLAG_REG);
-    g8(from);
-    g8(to);
-}
-
-static int instrWriteConst(int reg, int value, int bits, int bp)
-{
-    const char *bpStr = "";
-    if (bp) {
-        bpStr = "[BP] - ";
-        value = -value;
-    }
-    if (bits == 64) {
-        DEBUG_INSTR("WRITEF64 X%d, %s0x%08X", reg, bpStr, value);
-        g8(INSTR_WRITEF64);
-    } else if (bits == 32) {
-        DEBUG_INSTR("WRITE32 R%d, %s0x%08X", reg, bpStr, value);
-        g8(INSTR_WRITE32);
-    } else {
-        DEBUG_INSTR("WRITE%d R%d, %s0x%08X", bits, reg, bpStr, value);
-        g8(bits == 8 ? INSTR_WRITE8 : INSTR_WRITE16);
-    }
-    g8(INSTR_FLAG_IMM32 | (bp ? INSTR_FLAG_BP : 0));
-    int ret = ind;
-    g32(value);
-    g8(reg);
-    return ret;
-}
-
-static void instrWriteInd(int to, int from, int bits)
-{
-    if (bits == 64) {
-        DEBUG_INSTR("WRITEF64 X%d, [R%d]", to, from);
-        g8(INSTR_WRITEF64);
-    } else if (bits == 32) {
-        DEBUG_INSTR("WRITE32 R%d, [R%d]", to, from);
-        g8(INSTR_WRITE32);
-    } else {
-        DEBUG_INSTR("WRITE%d R%d, [R%d]", bits, to, from);
-        g8(bits == 8 ? INSTR_WRITE8 : INSTR_WRITE16);
-    }
-    g8(INSTR_FLAG_REG);
-    g8(from);
-    g8(to);
+    ind1 = ind + sizeof(CCVMInstr);
+    if (ind1 > cur_text_section->data_allocated)
+        section_realloc(cur_text_section, ind1);
+    CCVMInstr* res = (CCVMInstr*)&cur_text_section->data[ind];
+    ind = ind1;
+    memset(res, 0, sizeof(CCVMInstr));
+    res->opcode = opcode;
+    return res;
 }
 
 static void addReloc(Sym* sym, uint32_t address, int type)
@@ -284,3 +80,172 @@ static void addReloc(Sym* sym, uint32_t address, int type)
     greloc(cur_text_section, sym, address, type);
 }
 
+
+static void instrMovReloc(int reg, Sym* sym) {
+    DEBUG_INSTR("MOV_CONST R%d = %s", reg, get_tok_str(sym->v, NULL));
+    addReloc(sym, ind, RELOC_INSTR_ABSOLUTE);
+    genInstr(INSTR_MOV_CONST)->reg = reg;
+}
+
+static void instrMovConst(int reg, uint32_t value) {
+    DEBUG_INSTR("MOV_CONST R%d = 0x%08X", reg, value);
+    CCVMInstr* instr = genInstr(INSTR_MOV_CONST);
+    instr->reg = reg;
+    instr->value = value;
+}
+
+static void instrMovReg(int to, int from) {
+    DEBUG_INSTR("MOV_REG R%d = R%d", to, from);
+    CCVMInstr* instr = genInstr(INSTR_MOV_REG);
+    instr->dstReg = to;
+    instr->srcReg = from;
+}
+
+static void instrJumpReg(int is_call, int reg) {
+    DEBUG_INSTR("%s_REG R%d", is_call ? "CALL" : "JUMP", reg);
+    genInstr(is_call ? INSTR_CALL_REG : INSTR_JUMP_REG)->reg = reg;
+}
+
+static void instrJumpLabel(int label) {
+    DEBUG_INSTR("JUMP_CONST label_%d", label);
+    genInstr(INSTR_JUMP_LABEL)->label = label;
+}
+
+static void instrJumpReloc(int is_call, Sym* sym) {
+    DEBUG_INSTR("%s_CONST %s", is_call ? "CALL" : "JUMP", get_tok_str(sym->v, NULL));
+    addReloc(sym, ind, RELOC_INSTR_RELATIVE0);
+    genInstr(is_call ? INSTR_CALL_CONST : INSTR_JUMP_CONST);
+}
+
+static void instrPush(int bits, int reg) {
+    int op2 = 1;
+    switch (bits)
+    {
+        case 8: op2 = 1; break;
+        case 16: op2 = 2; break;
+        case 24: op2 = 3; break;
+        case 32: op2 = 4; break;
+        default: tcc_error("Internal error: invalid number of bits to push."); break;
+    }
+    DEBUG_INSTR("PUSH%d R%d", bits, reg);
+    CCVMInstr* instr = genInstr(INSTR_PUSH);
+    instr->op2 = op2;
+    instr->reg = reg;
+}
+
+static void instrPushBlockLabel(int reg, int label) {
+    DEBUG_INSTR("PUSH_BLOCK R%d, label_%d", reg, label);
+    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_LABEL);
+    instr->reg = reg;
+    instr->label = label;
+}
+
+static void instrPushBlockConst(int reg, int size) {
+    DEBUG_INSTR("PUSH_BLOCK R%d, %d", reg, size);
+    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_CONST);
+    instr->reg = reg;
+    instr->value = size;
+}
+
+static void instrReturn(int cleanupWords) {
+    DEBUG_INSTR("RETURN %d", cleanupWords);
+    genInstr(INSTR_RETURN)->value = cleanupWords;
+}
+
+
+static void instrJumpCondLabel(int op, int label) {
+    DEBUG_INSTR("JUMP_IF 0x%02X [...reloc...]", op);
+    CCVMInstr* instr = genInstr(INSTR_JUMP_COND_LABEL);
+    instr->op2 = op;
+    instr->label = label;
+}
+
+static void instrBinOp(int op, int a, int b)
+{
+    DEBUG_INSTR("BIN_OP 0x%02X R%d R%d", op, a, b);
+    CCVMInstr* instr = genInstr(INSTR_BIN_OP);
+    instr->op2 = op;
+    instr->dstReg = a;
+    instr->srcReg = b;
+}
+
+static void instrCmp(int a, int b)
+{
+    DEBUG_INSTR("CMP R%d R%d", a, b);
+    CCVMInstr* instr = genInstr(INSTR_CMP);
+    instr->dstReg = a;
+    instr->srcReg = b;
+}
+
+
+static uint8_t instrReadWriteOp2(char* str, int* value, int bits, int sign_extend, int bp)
+{
+    uint8_t res = 0;
+    if (sign_extend) {
+        strcat(str, "S");
+        res |= 0x80;
+    }
+    switch (bits) {
+        case 8: res |= 0; strcat(str, "8 R%d, "); break;
+        case 16: res |= 1; strcat(str, "16 R%d, "); break;
+        case 32: res |= 2; strcat(str, "32 R%d, "); break;
+        case 64: res |= 3; strcat(str, "64 X%d, "); break;
+        default: tcc_error("Internal error: invalid number of bits to read."); strcat(str, "?? R%d, "); break;
+    }
+    if (bp) {
+        strcat(str, "[BP] - ");
+        res |= 0x40;
+        if (value) *value = -*value;
+    }
+    return res;
+}
+
+static void instrRWReloc(int read, Sym* sym, int reg, int bits, int sign_extend)
+{
+    char format[128];
+    char str[128];
+    strcpy(format, read ? "READ" : "WRITE");
+    uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, 0);
+    sprintf(str, format, reg);
+    DEBUG_INSTR("%s%s", str, get_tok_str(sym->v, NULL));
+    addReloc(sym, ind, RELOC_INSTR_ABSOLUTE);
+    CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST);
+    instr->op2 = op2;
+    instr->reg = reg;
+}
+
+static void instrRWConst(int read, int reg, int value, int bits, int sign_extend, int bp)
+{
+    char format[128];
+    char str[128];
+    strcpy(format, read ? "READ" : "WRITE");
+    uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, bp);
+    sprintf(str, format, reg);
+    DEBUG_INSTR("%0x%08X", str, value);
+    CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST);
+    instr->op2 = op2;
+    instr->reg = reg;
+    instr->value = value;
+}
+
+static void instrRWInd(int read, int reg, int addrReg, int bits, int sign_extend)
+{
+    char format[128];
+    char str[128];
+    strcpy(format, read ? "READ" : "WRITE");
+    uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, 0);
+    sprintf(str, format, reg);
+    DEBUG_INSTR("[R%d]", str, addrReg);
+    CCVMInstr* instr = genInstr(read ? INSTR_READ_REG : INSTR_WRITE_REG);
+    instr->op2 = op2;
+    instr->reg = reg;
+    instr->addrReg = addrReg;
+}
+
+static void instrLabel(int label, int relative, int offset)
+{
+    DEBUG_INSTR("LABEL label_%d = %s0x%08X", label, relative ? "rel " : "", offset);
+    CCVMInstr* instr = genInstr(relative ? INSTR_LABEL_RELATIVE : INSTR_LABEL_ABSOLUTE);
+    instr->label = label;
+    instr->address_offset = offset;
+}
