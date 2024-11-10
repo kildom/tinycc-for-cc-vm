@@ -30,6 +30,7 @@ enum {
     INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
     INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
     INSTR_RETURN,           // value = cleanup words
+    INSTR_LABEL_ALIAS,      // labelAlias = label
 };
 
 
@@ -48,6 +49,7 @@ typedef struct CCVMInstr {
             };
         };
         int32_t address_offset;
+        int32_t labelAlias;
     };
     union {
         uint32_t value;
@@ -83,7 +85,7 @@ static void addReloc(Sym* sym, uint32_t address, int type)
 
 static void instrMovReloc(int reg, Sym* sym) {
     DEBUG_INSTR("MOV_CONST R%d = %s", reg, get_tok_str(sym->v, NULL));
-    addReloc(sym, ind, RELOC_INSTR_ABSOLUTE);
+    addReloc(sym, ind, RELOC_INSTR);
     genInstr(INSTR_MOV_CONST)->reg = reg;
 }
 
@@ -113,7 +115,7 @@ static void instrJumpLabel(int label) {
 
 static void instrJumpReloc(int is_call, Sym* sym) {
     DEBUG_INSTR("%s_CONST %s", is_call ? "CALL" : "JUMP", get_tok_str(sym->v, NULL));
-    addReloc(sym, ind, RELOC_INSTR_RELATIVE0);
+    addReloc(sym, ind, RELOC_INSTR);
     genInstr(is_call ? INSTR_CALL_CONST : INSTR_JUMP_CONST);
 }
 
@@ -208,7 +210,7 @@ static void instrRWReloc(int read, Sym* sym, int reg, int bits, int sign_extend)
     uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, 0);
     sprintf(str, format, reg);
     DEBUG_INSTR("%s%s", str, get_tok_str(sym->v, NULL));
-    addReloc(sym, ind, RELOC_INSTR_ABSOLUTE);
+    addReloc(sym, ind, RELOC_INSTR);
     CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST);
     instr->op2 = op2;
     instr->reg = reg;
@@ -248,4 +250,12 @@ static void instrLabel(int label, int relative, int offset)
     CCVMInstr* instr = genInstr(relative ? INSTR_LABEL_RELATIVE : INSTR_LABEL_ABSOLUTE);
     instr->label = label;
     instr->address_offset = offset;
+}
+
+static void instrLabelAlias(int labelA, int labelB)
+{
+    DEBUG_INSTR("ALIAS label_%d = label_%d", labelA, labelB);
+    CCVMInstr* instr = genInstr(INSTR_LABEL_ALIAS);
+    instr->label = labelA;
+    instr->labelAlias = labelB;
 }

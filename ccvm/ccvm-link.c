@@ -400,7 +400,7 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
         }
 
         // Convert local relocations into symbols plus normal relocations and append them
-        LinkSymbol* VEC* label_to_symbol;
+        /*LinkSymbol* VEC* label_to_symbol;
         vecAlloc(label_to_symbol, sec_local_rel ? sec_local_rel->data_offset / sizeof(LocalRelocEntry) / 2 : 0);
 
         for (int i = 0; sec_local_rel && i < sec_local_rel->data_offset / sizeof(LocalRelocEntry); i++) {
@@ -468,7 +468,7 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
         }
 
         // Assign offsets to local relocation labels
-        for (int i = 0; sec_local_rel && i < sec_local_rel->data_offset / sizeof(LocalRelocEntry); i++) {
+        /*for (int i = 0; sec_local_rel && i < sec_local_rel->data_offset / sizeof(LocalRelocEntry); i++) {
             LocalRelocEntry* elf_rel = (LocalRelocEntry*)sec_local_rel->data + i;
             if (elf_rel->cmd == LOCAL_RELOC_SET_LABEL) {
                 int offset = offset_adjust + elf_rel->source;
@@ -493,7 +493,7 @@ static void copyToOutputSection(TCCState *s1, OutputSection* output, Section* VE
             }
         }
 
-        vecFree(label_to_symbol);
+        vecFree(label_to_symbol);*/
 
         // Adjust associated symbols from elf, newly added symbols already has correct section and offset
         for (int i = 0; i < elf_symbol_count; i++) {
@@ -686,7 +686,7 @@ static int ccvm_output_file(TCCState *s1, const char *filename)
 }
 
 static int ccvm_patch_local_reloc(ElfW(Ehdr)* ehdr, ElfW(Shdr) *shdr, struct SectionMergeInfo *sm_table) {
-    int i;
+    /*int i;
     int offseti;
     Section *s;
     ElfW(Shdr) *sh;
@@ -759,5 +759,5 @@ static int ccvm_patch_local_reloc(ElfW(Ehdr)* ehdr, ElfW(Shdr) *shdr, struct Sec
             }
         }
 
-    }
+    }*/
 }

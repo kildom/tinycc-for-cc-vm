@@ -466,7 +466,7 @@ ST_FUNC int gjmp_append(int n, int t)
     int r;
     if (n) {
         if (t && t != n) {
-            addLocalReloc(LOCAL_RELOC_ALIAS_LABEL, t, n, 0);
+            instrLabelAlias(t, n);
             return n;
         } else {
             return n;
@@ -591,7 +591,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align)
 
 ST_FUNC void gsym_addr(int t, int a)
 {
-    addLocalReloc(LOCAL_RELOC_SET_LABEL, a, t, 0);
+    instrLabel(t, 1, a - ind);
 }
 
 /*************************************************************/
