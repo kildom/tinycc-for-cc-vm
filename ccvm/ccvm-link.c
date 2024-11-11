@@ -283,7 +283,7 @@ static void verifyHostInterface(TCCState *s1)
 static void createExportTable(TCCState *s1)
 {
     TRACE("");
-    Section* export_table = new_section(s1, ".ccvm.export.table", SHT_PROGBITS, SHF_ALLOC);
+    /*Section* export_table = new_section(s1, ".ccvm.export.table", SHT_PROGBITS, SHF_ALLOC);
     cur_text_section = export_table;
     ind = cur_text_section->data_offset;
     for (int i = 0; i < vecSize(exports); i++) {
@@ -295,7 +295,7 @@ static void createExportTable(TCCState *s1)
             put_elf_reloca(symtab_section, cur_text_section, 4 * i, RELOC_DATA, invalidExport->elf_sym_index, 0);
         }
     }
-    cur_text_section->data_offset = ind;
+    cur_text_section->data_offset = ind;*/
 }
 
 static const char* outputSectionName(OutputSectionType type)
@@ -631,7 +631,38 @@ static void generateBytecode(TCCState *s1)
     generateSection(s1, &addr, &outputSections[OUTPUT_SECTION_TEXT], &programMemory);
 }
 
+
+typedef struct MySection {
+    uint64_t id;
+    uint32_t size;
+} MySection;
+
+static FILE* output_file;
+
+static void write_string(const char* str) {
+    uint32_t len = strlen(str);
+    fwrite(&len, sizeof(len), 1, output_file);
+    fwrite(str, len, 1, output_file);
+}
+
 static int ccvm_output_file(TCCState *s1, const char *filename)
+{    
+    TRACE("");
+    output_file = fopen(filename, "wb");
+    if (!output_file) {
+        tcc_error("Cannot open output file '%s'", filename);
+        return -1;
+    }
+    for (int i = 1; i < s1->nb_sections; i++) {
+        Section* sec = s1->sections[i];
+        MySection ms;
+        ms.id = (uint64_t)(uintptr_t)sec;
+        ms.size = sec->data_offset;
+    }
+    fclose(output_file);
+}
+
+static int ccvm_output_fileOLD(TCCState *s1, const char *filename)
 {
     TRACE("");
 
@@ -683,81 +714,4 @@ static int ccvm_output_file(TCCState *s1, const char *filename)
 
     tcc_exit_state(s1);
     return 0;
-}
-
-static int ccvm_patch_local_reloc(ElfW(Ehdr)* ehdr, ElfW(Shdr) *shdr, struct SectionMergeInfo *sm_table) {
-    /*int i;
-    int offseti;
-    Section *s;
-    ElfW(Shdr) *sh;
-    static int label_offset = 0;
-    for(i = 1; i < ehdr->e_shnum; i++) {
-        s = sm_table[i].s;
-        if (!s)
-            continue;
-        sh = &shdr[i];
-        int offset = sm_table[i].offset;
-        if (s->sh_type != SHT_NOTE
-            || strlen(s->name) <= strlen(LOCAL_RELOC_PREFIX)
-            || memcmp(s->name, LOCAL_RELOC_PREFIX, strlen(LOCAL_RELOC_PREFIX)) != 0
-        ) {
-            continue;
-        }
-        offseti = sm_table[sh->sh_info].offset;
-        printf("Patch %s by %d, label %d, source start %d\n", s->name, offseti, label_offset, offset);
-        for (int i = offset / sizeof(LocalRelocEntry); i < s->data_offset / sizeof(LocalRelocEntry); i++) {
-            LocalRelocEntry* entry = (LocalRelocEntry*)s->data + i;
-            switch (entry->cmd)
-            {
-            case LOCAL_RELOC_ADDR:
-                printf("--- addr 0x%08X to 0x%08X\n", entry->source, entry->target);
-                break;
-            case LOCAL_RELOC_LABEL:
-                printf("--- use %d for 0x%08X\n", entry->source, entry->target);
-                break;
-            case LOCAL_RELOC_SET_LABEL:
-                printf("--- set %d to 0x%08X\n", entry->target, entry->source);
-                break;
-            case LOCAL_RELOC_ALIAS_LABEL:
-                printf("--- alias %d == %d\n", entry->target, entry->source);
-                break;
-            default:
-                break;
-            }
-        }
-
-        uint8_t* ptr = s->data + offset;
-        uint8_t* end = s->data + s->data_offset;
-        int entries_count = 0;
-        int next_label = label_offset;
-        while (ptr + sizeof(LocalRelocEntry) <= end) {
-            int entry_size = patchLocalReloc((void*)ptr, offseti, label_offset, &next_label);
-            printf("    Patch at %d\n", (int)(ptr - s->data));
-            ptr += entry_size;
-            entries_count++;
-        }
-        label_offset = next_label;
-
-        for (int i = offset / sizeof(LocalRelocEntry); i < s->data_offset / sizeof(LocalRelocEntry); i++) {
-            LocalRelocEntry* entry = (LocalRelocEntry*)s->data + i;
-            switch (entry->cmd)
-            {
-            case LOCAL_RELOC_ADDR:
-                printf("--- addr 0x%08X to 0x%08X\n", entry->source, entry->target);
-                break;
-            case LOCAL_RELOC_LABEL:
-                printf("--- use %d for 0x%08X\n", entry->source, entry->target);
-                break;
-            case LOCAL_RELOC_SET_LABEL:
-                printf("--- set %d to 0x%08X\n", entry->target, entry->source);
-                break;
-            case LOCAL_RELOC_ALIAS_LABEL:
-                printf("--- alias %d == %d\n", entry->target, entry->source);
-                break;
-            default:
-                break;
-            }
-        }
-
-    }*/
 }

@@ -3346,10 +3346,6 @@ invalid:
         }
     }
 
-#ifdef TCC_TARGET_CCVM
-    ccvm_patch_local_reloc(&ehdr, shdr, sm_table);
-#endif
-
     ret = 0;
  the_end:
     tcc_free(symtab);

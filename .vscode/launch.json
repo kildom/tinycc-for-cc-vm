@@ -9,7 +9,7 @@
             "name": "compiler",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc",
+            "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc.exe",
             "args": [
                 "-c",
                 "-I../include",

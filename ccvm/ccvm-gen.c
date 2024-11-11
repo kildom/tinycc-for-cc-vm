@@ -310,7 +310,7 @@ void gfunc_call(int nb_args)
         } else if (is_float(vtop->type.t)) {
             gv(RC_FLOAT); /* only one float register */
             DEBUG_COMMENT("TODO push float parameter");
-            g8(0);
+            //g8(0);
         } else {
             /* XXX: implicit cast ? */
             // put register to integer register

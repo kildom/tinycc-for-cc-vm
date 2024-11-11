@@ -13,9 +13,4 @@
         if ((void*)var != (void*)_TMP_##var) tcc_free(var); \
     } while (0);
 
-static void g8(int c);
-static void g16(int c);
-static void g24(int c);
-static void g32(int c);
-
 #endif // _CCVM_OUTPUT_H_
