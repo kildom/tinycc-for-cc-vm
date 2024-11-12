@@ -634,7 +634,19 @@ static void generateBytecode(TCCState *s1)
 
 typedef struct MySection {
     uint64_t id;
+    uint64_t link;
+    uint64_t reloc;
+    uint64_t prev;
     uint32_t size;
+    uint32_t data_size;
+    uint32_t addr;
+    uint32_t entsize;
+    uint32_t flags;
+    uint32_t info;
+    uint32_t type;
+    uint32_t name_len;
+    uint32_t index;
+    uint32_t _reserved;
 } MySection;
 
 static FILE* output_file;
@@ -648,6 +660,7 @@ static void write_string(const char* str) {
 static int ccvm_output_file(TCCState *s1, const char *filename)
 {    
     TRACE("");
+    MySection ms;
     output_file = fopen(filename, "wb");
     if (!output_file) {
         tcc_error("Cannot open output file '%s'", filename);
@@ -655,10 +668,28 @@ static int ccvm_output_file(TCCState *s1, const char *filename)
     }
     for (int i = 1; i < s1->nb_sections; i++) {
         Section* sec = s1->sections[i];
-        MySection ms;
         ms.id = (uint64_t)(uintptr_t)sec;
         ms.size = sec->data_offset;
+        ms.data_size = sec->data ? sec->data_offset : 0;
+        ms.link = (uint64_t)(uintptr_t)sec->link;
+        ms.reloc = (uint64_t)(uintptr_t)sec->reloc;
+        ms.prev = (uint64_t)(uintptr_t)sec->prev;
+        ms.addr = sec->sh_addr;
+        ms.entsize = sec->sh_entsize;
+        ms.flags = sec->sh_flags;
+        ms.info = sec->sh_info;
+        ms.type = sec->sh_type;
+        ms.name_len = strlen(sec->name);
+        ms.index = sec->sh_num;
+        fwrite(&ms, 1, sizeof(ms), output_file);
+        fwrite(&sec->name, 1, ms.name_len, output_file);
+        if (sec->data) {
+            fwrite(sec->data, sec->data_offset, 1, output_file);
+        }
+        printf("Output section %s, size %d, %s\n", sec->name, ms.size, ms.data_size ? "data" : "no-data");
     }
+    memset(&ms, 0, sizeof(ms));
+    fwrite(&ms, 1, sizeof(ms), output_file);
     fclose(output_file);
 }
 

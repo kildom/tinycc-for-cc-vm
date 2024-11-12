@@ -223,7 +223,7 @@ static void instrRWConst(int read, int reg, int value, int bits, int sign_extend
     strcpy(format, read ? "READ" : "WRITE");
     uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, bp);
     sprintf(str, format, reg);
-    DEBUG_INSTR("%0x%08X", str, value);
+    DEBUG_INSTR("%s0x%08X", str, value);
     CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST);
     instr->op2 = op2;
     instr->reg = reg;
@@ -237,7 +237,7 @@ static void instrRWInd(int read, int reg, int addrReg, int bits, int sign_extend
     strcpy(format, read ? "READ" : "WRITE");
     uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, 0);
     sprintf(str, format, reg);
-    DEBUG_INSTR("[R%d]", str, addrReg);
+    DEBUG_INSTR("%s[R%d]", str, addrReg);
     CCVMInstr* instr = genInstr(read ? INSTR_READ_REG : INSTR_WRITE_REG);
     instr->op2 = op2;
     instr->reg = reg;
