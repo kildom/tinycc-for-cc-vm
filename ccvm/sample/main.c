@@ -27,6 +27,12 @@ long long fll(long long x, long long y, long long z)
     return (x * x + y * y + z * z) * (x + 1);
 }
 
+extern short buffer[256];
+
+short* with_offset = &buffer[33];
+
+short buffer[256];
+
 __attribute__((weak))
 void fx() {
     a();
@@ -90,6 +96,23 @@ struct {
     unsigned BP2;
     unsigned char initialized;
 } __ccvm_registers;
+
+void __attribute__((constructor)) myInitializer() {
+    fx();
+    fx();
+    fx();
+    fx();
+    fx();
+    fx();
+    fx();
+}
+
+void __attribute__((destructor)) myCleaner() {
+    fx();
+    fx();
+    fx();
+    fx();
+}
 
 static void _ccvm_entry() {
 

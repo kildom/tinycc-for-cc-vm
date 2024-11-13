@@ -8,6 +8,8 @@ Program memory (`0x40000000`):
 * `.ccvm.entry` - entry jump
 * `.rodata`, `.data.ro`, `.data.*.ro` - read only data
 * `.ccvm.export.table` - automatically generated table of exported functions pointers
+* `.init_array` - initializers function pointers
+* `.fini_array` - finalizers function pointers
 * `.text` - program
 * copy of `.data` - initialization data
 

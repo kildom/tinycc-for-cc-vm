@@ -1,5 +1,85 @@
 
 import * as fs from 'node:fs';
+import * as util from 'node:util';
+
+enum RelocationType {
+    DATA = 1,
+    INSTR = 2,
+};
+
+interface Relocation {
+    addr: number;
+    type: RelocationType;
+    symbol: Symbol | undefined;
+}
+
+enum IROpcode {
+    INSTR_MOV_REG,          // dstReg = srcReg
+    INSTR_MOV_CONST,        // reg = value
+    INSTR_LABEL_RELATIVE,   // label, address_offset
+    INSTR_LABEL_ABSOLUTE,   // label, address_offset
+    INSTR_WRITE_CONST,      // reg => [value]
+    INSTR_READ_CONST,       // reg <= [value]
+    INSTR_WRITE_REG,        // reg => [addrReg]
+    INSTR_READ_REG,         // reg <= [addrReg]
+    INSTR_JUMP_COND_LABEL,  // label, op2 = condition
+    INSTR_JUMP_CONST,       // address
+    INSTR_CALL_CONST,       // address
+    INSTR_JUMP_LABEL,       // label
+    INSTR_JUMP_REG,         // reg
+    INSTR_CALL_REG,         // reg
+    INSTR_PUSH,             // reg, op2 = 1..4 bytes
+    INSTR_PUSH_BLOCK_CONST, // reg, value = block size
+    INSTR_PUSH_BLOCK_LABEL, // reg, label = label containing block size
+    INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
+    INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
+    INSTR_RETURN,           // value = cleanup words
+    INSTR_LABEL_ALIAS,      // labelAlias = label
+    
+    INSTR_DATA,
+    INSTR_WORD,
+    INSTR_FILL,
+    INSTR_DISPOSABLE_BEGIN,
+    INSTR_DISPOSABLE_END,
+    INSTR_LABEL,
+    INSTR_PROGRAM,
+};
+
+interface CompileContext {
+
+}
+
+type ValueFunction = (ctx: CompileContext) => number;
+
+interface IRInstructionBase {
+    opcode: IROpcode;
+    addr?: number; // TODO: Clean it up
+};
+
+interface IREmptyInstruction extends IRInstructionBase {
+    opcode: IROpcode.INSTR_DISPOSABLE_BEGIN | IROpcode.INSTR_DISPOSABLE_END | IROpcode.INSTR_PROGRAM;
+}
+interface IRWithValueInstruction extends IRInstructionBase {
+    opcode: IROpcode.INSTR_WORD;
+    value: ValueFunction;
+}
+
+interface IRNamedInstruction extends IRInstructionBase {
+    opcode: IROpcode.INSTR_LABEL;
+    name: string;
+}
+
+interface IRDataInstruction extends IRInstructionBase {
+    opcode: IROpcode.INSTR_DATA;
+    data: Uint8Array;
+};
+
+interface IRFillInstruction extends IRInstructionBase {
+    opcode: IROpcode.INSTR_FILL;
+    size: number;
+};
+
+type IRInstruction = IREmptyInstruction | IRWithValueInstruction | IRNamedInstruction | IRDataInstruction | IRFillInstruction;
 
 export interface Section {
     id: string;
@@ -9,12 +89,14 @@ export interface Section {
     reloc: string | undefined;
     prev: string | undefined;
     size: number;
-    data: Uint8Array;
+    data: Uint8Array | undefined;
     addr: number;
     entsize: number;
     flags: number;
     info: number;
     type: number;
+    symbols: Symbol[];
+    relocations: Relocation[];
 }
 
 export enum SymbolBinding {
@@ -35,6 +117,8 @@ export enum SymbolType {
 
 export interface Symbol {
     name: string;
+    index: number;
+    outputName: string;
     section: Section | undefined;
     absoluteAddr: boolean;
     addr: number;
@@ -67,6 +151,19 @@ export interface Program {
     exports: ExportEntry[];
     imports: ImportEntry[];
     importByName: Dict<ImportEntry>;
+    outputSections: {
+        registers: Section[];
+        data: Section[];
+        bss: Section[];
+        entry: Section[];
+        rodata: Section[];
+        exportTable: Section[];
+        initTable: Section[];
+        finiTable: Section[];
+        text: Section[];
+        removed: Section[];
+    }
+    instructions: IRInstruction[];
 };
 
 
@@ -93,8 +190,9 @@ const SHN_ABS = 0xfff1;
 
 function parseSymtab(program: Program, symtab: Section) {
     let offset = 0;
-    let view = new DataView(symtab.data.buffer, symtab.data.byteOffset, symtab.data.byteLength);
     program.symbols.splice(0);
+    if (!symtab.data) return;
+    let view = new DataView(symtab.data.buffer, symtab.data.byteOffset, symtab.data.byteLength);
     let exportByName: Dict<ExportEntry[]> = Object.create(null);
     for (let exp of program.exports) {
         if (!exp) continue;
@@ -130,6 +228,8 @@ function parseSymtab(program: Program, symtab: Section) {
         //if (!SymbolType[type]) throw new Error(`Unknown symbol type ${type}.`); - uncomment if actually used
         let symbol: Symbol = {
             name,
+            index: program.symbols.length,
+            outputName: `${name}@${section?.id}_${program.symbols.length}`,
             section,
             absoluteAddr,
             addr,
@@ -138,6 +238,7 @@ function parseSymtab(program: Program, symtab: Section) {
             type: type as SymbolType,
         };
         program.symbols.push(symbol);
+        section?.symbols.push(symbol);
         if (symbol.binding !== SymbolBinding.LOCAL && symbol.section === undefined && symbol.absoluteAddr === false && program.importByName[symbol.name]) {
             symbol.imported = program.importByName[symbol.name];
         }
@@ -155,10 +256,34 @@ function parseSymtab(program: Program, symtab: Section) {
     }
 }
 
-function checkInterface(program: Program) {
-    for (let exported of program.exports) {
-        if (exported && !exported.symbol) {
-            error(`Undefined export symbol "${exported.name}`);
+function findRelocation(program: Program, section: Section) {
+    if (section.reloc) {
+        if (!program.sectionById[section.reloc]) throw new Error(`Missing section ${section.reloc} which is relocation section for "${section.name}".`);
+        return program.sectionById[section.reloc];
+    } else {
+        let name = '.rel' + section.name;
+        return program.sections.filter(sec => sec.name === name)[0];
+    }
+}
+
+function parseRelocations(program: Program) {
+    for (let section of program.sections) {
+        let rel = findRelocation(program, section);
+        if (!rel || !rel.data) continue;
+        let view = new DataView(rel.data.buffer, rel.data.byteOffset, rel.data.byteLength);
+        let offset = 0;
+        while (offset < view.byteLength) {
+            let addr = view.getUint32(offset + 0, true);
+            let info = view.getUint32(offset + 4, true);
+            let symbolIndex = info >> 8;
+            let type = info & 0xFF;
+            if (!RelocationType[type]) throw new Error(`Unknown relocation type: ${type}.`);
+            offset += 8;
+            section.relocations[addr] = {
+                addr,
+                type,
+                symbol: program.symbols[symbolIndex],
+            };
         }
     }
 }
@@ -172,12 +297,14 @@ function parseSections(program: Program) {
         link: undefined, reloc: undefined, prev: undefined,
         size: 0, data: new Uint8Array(),
         addr: 0, entsize: 16, flags: 0, info: 0, type: 2,
+        symbols: [], relocations: [],
     };
     let strtab: Section = {
         id: 'empty_symtab', name: '.strtab', index: program.sections.length + 1,
         link: undefined, reloc: undefined, prev: undefined,
         size: 0, data: new Uint8Array(),
         addr: 0, entsize: 0, flags: 0, info: 0, type: 3,
+        symbols: [], relocations: [],
     };
     let m: RegExpMatchArray | null;
     for (let section of program.sections) {
@@ -207,10 +334,211 @@ function parseSections(program: Program) {
     }
     program.getString = parseStrtab(strtab);
     parseSymtab(program, symtab);
-    checkInterface(program);
-    console.log(program);
+    parseRelocations(program);
+    createExportTable(program);
+    assignSections(program);
+    parseSectionsData(program, program.outputSections.registers, false);
+    parseSectionsData(program, program.outputSections.data, true);
+    parseSectionsData(program, program.outputSections.bss, true);
+    program.instructions.push({ opcode: IROpcode.INSTR_PROGRAM });
+    console.log('PROGRAM MEMORY');
+    parseSectionsData(program, program.outputSections.entry, false);
+    parseSectionsData(program, program.outputSections.rodata, true);
+    parseSectionsData(program, program.outputSections.exportTable, false);
+    parseSectionsData(program, program.outputSections.initTable, false);
+    parseSectionsData(program, program.outputSections.finiTable, false);
+    //program.outputSections.text.forEach(sec => parseSectionCode(program, sec));
 }
 
+function createVarExp(variableName: string) {
+    return () => 0; // TODO;
+}
+
+function createAddExp(a: ValueFunction, b: ValueFunction) {
+    return (ctx: CompileContext) => (a(ctx) + b(ctx)) & 0xFFFFFFFF;
+}
+
+function parseSectionsData(program: Program, sections: Section[], allowDisposable: boolean) {
+    for (let section of sections) {
+        parseSectionData(program, section, allowDisposable);
+    }
+}
+
+function parseSectionData(program: Program, section: Section, allowDisposable: boolean) {
+    let output = program.instructions;
+    let text = {
+        push(text: string) {
+            console.log(text);
+        }
+    }
+    let symbolByAddr: Symbol[] = [];
+    let boundaries = new Set<number>();
+    section.relocations.forEach(rel => {
+        boundaries.add(rel.addr);
+        boundaries.add(rel.addr + 4);
+    });
+    section.symbols.forEach(symbol => {
+        boundaries.add(symbol.addr);
+        boundaries.add(symbol.addr + symbol.size);
+        symbolByAddr[symbol.addr] = symbol;
+    });
+    boundaries.add(section.size);
+    boundaries.delete(0);
+    let begin = 0;
+    let boundariesArr = [...boundaries];
+    boundariesArr.sort((a, b) => a - b);
+    let disposableEndings: number[] = [];
+    for (let i = 0; i < boundariesArr.length; i++) {
+        let end = boundariesArr[i];
+
+        // Add symbol information
+        let symbol = symbolByAddr[begin];
+        if (symbol) {
+            if (symbol.size > 0 && allowDisposable) {
+                output.push({
+                    opcode: IROpcode.INSTR_DISPOSABLE_BEGIN,
+                });
+                text.push(`BEGIN DISPOSABLE`);
+                let symbolEnd = begin + symbol.size;
+                disposableEndings[symbolEnd] = (disposableEndings[symbolEnd] ?? 0) + 1;
+            }
+            output.push({
+                opcode: IROpcode.INSTR_LABEL,
+                name: symbol.outputName,
+            });
+            text.push(`${symbol.outputName}:`);
+        }
+
+        let rel = section.relocations[begin];
+
+        if (rel) {
+            if (end - begin != 4) {
+                //console.log(boundariesArr);
+                //console.log(section.relocations);
+                throw new Error('Overlapping relocation and symbol boundaries or other relocation.');
+            }
+            if (rel.type !== RelocationType.DATA) {
+                throw new Error(`Section "${section.name}" allows only "DATA" relocation, found "${RelocationType[rel.type]}".`);
+            }
+            let add = 0;
+            let buf = section.data?.slice(begin, end);
+            if (buf) {
+                add = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0, true);
+            }
+            output.push({
+                opcode: IROpcode.INSTR_WORD,
+                value: rel.symbol ? createAddExp(createVarExp(rel.symbol.outputName), () => add) : () => 0,
+            });
+            text.push(`WORD ${rel.symbol?.outputName ?? 0} + ${add}`);
+        } else if (section.data) {
+            output.push({
+                opcode: IROpcode.INSTR_DATA,
+                data: section.data.slice(begin, end),
+            });
+            text.push(`DATA ${[...section.data.slice(begin, end)]}`);
+        } else {
+            output.push({
+                opcode: IROpcode.INSTR_FILL,
+                size: end - begin,
+            });
+            text.push(`FILL ${end - begin}`);
+        }
+
+        if (disposableEndings[end]) {
+            for (let i = 0; i < disposableEndings[end]; i++) {
+                output.push({
+                    opcode: IROpcode.INSTR_DISPOSABLE_END,
+                });
+                text.push(`END DISPOSABLE`);
+            }
+        }
+        begin = end;
+    }
+}
+
+function createExportTable(program: Program) {
+    let relocations: Relocation[] = [];
+    for (let i = 0; i < program.exports.length; i++) {
+        let exported = program.exports[i];
+        if (!exported) {
+            // Skip
+        } else if (!exported.symbol) {
+            error(`Undefined symbol "${exported.name}" for exported index ${i}.`);
+        } else {
+            relocations[4 * i] = {
+                addr: 4 * i,
+                type: RelocationType.DATA,
+                symbol: exported.symbol,
+            };
+        }
+    }
+    let section: Section = {
+        id: 'generated_export_table',
+        index: program.sections.length + 2,
+        name: '.ccvm.export.table',
+        link: undefined,
+        reloc: undefined,
+        prev: undefined,
+        size: 4 * program.exports.length,
+        data: undefined,
+        addr: 0,
+        entsize: 0,
+        flags: 0,
+        info: 0,
+        type: 1,
+        symbols: [],
+        relocations,
+    };
+    program.sections.push(section);
+    program.sectionById[section.id] = section;
+    program.sectionByIndex[section.index] = section;
+}
+
+
+const outputSectionsRexExp: { [key in keyof Program['outputSections']]: RegExp } = {
+    registers: /^\.ccvm\.registers(\..*)?$/,
+    bss: /^\.(bss|common)(\..*)?$/,
+    entry: /^\.ccvm\.entry(\..*)?$/,
+    rodata: /^\.(rodata(\..*)?|data(\..*)?\.ro)$/,
+    data: /^\.data(\..*)?$/,
+    exportTable: /^\.ccvm\.export\.table$/,
+    initTable: /^\.init_array(\..*)?$/,
+    finiTable: /^\.fini_array(\..*)?$/,
+    text: /^\.text(\..*)?$/,
+    removed: /^.*$/,
+};
+
+
+function assignSections(program: Program) {
+    for (let section of program.sections) {
+        for (let [bucketName, re] of Object.entries(outputSectionsRexExp) as [keyof typeof outputSectionsRexExp, RegExp][]) {
+            if (re.test(section.name)) {
+                program.outputSections[bucketName].push(section);
+                break;
+            }
+        }
+    }
+    for (let bucket of Object.values(program.outputSections)) {
+        bucket.sort((a, b) => {
+            let aa = a.name.split('.');
+            let bb = b.name.split('.');
+            for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
+                if (aa[i] === undefined) return -1;
+                if (bb[i] === undefined) return 1;
+                let ia = parseInt(aa[i]);
+                let ib = parseInt(bb[i]);
+                if (ia.toString() === aa[i] && ib.toString() === bb[i]) {
+                    if (ia !== ib) return ia - ib;
+                } else {
+                    let r = aa[i].localeCompare(bb[i], 'en-US');
+                    if (r < 0) return -1;
+                    if (r > 0) return 1;
+                }
+            }
+            return 0;
+        });
+    }
+}
 
 function readCompiledFile(fileName: string) {
     let decoder = new TextDecoder('ascii');
@@ -247,7 +575,12 @@ function readCompiledFile(fileName: string) {
         offset += name_len;
 
         if (offset + data_size > file.length) throw new Error('Corrupted input file.');
-        let data = file.slice(offset, offset + data_size);
+        let data: Uint8Array | undefined;
+        if (data_size !== size) {
+            data = undefined;
+        } else {
+            data = file.slice(offset, offset + data_size);
+        }
         offset += data_size;
 
         sections.push({
@@ -264,6 +597,8 @@ function readCompiledFile(fileName: string) {
             flags,
             info,
             type,
+            symbols: [],
+            relocations: [],
         });
     }
     let sectionById: Dict<Section> = Object.create(null);
@@ -283,10 +618,47 @@ function readCompiledFile(fileName: string) {
         exports: [],
         imports: [],
         importByName: Object.create(null),
+        outputSections: {
+            registers: [],
+            data: [],
+            bss: [],
+            entry: [],
+            rodata: [],
+            exportTable: [],
+            initTable: [],
+            finiTable: [],
+            text: [],
+            removed: [],
+        },
+        instructions: [],
     };
     return result;
+}
+
+
+function refs(a: any, m: Map<any, any>) {
+    if (typeof a === 'object' && !(a.buffer instanceof ArrayBuffer)) {
+        m.set(a, `*** REF ${m.size} ***`);
+        if (Array.isArray(a)) {
+            return a.map((value) => {
+                if (m.has(value)) return m.get(value);
+                return refs(value, m);
+            });
+        } else {
+            return {
+                '_': m.get(a),
+                ...Object.fromEntries(Object.entries(a)
+                    .map(([key, value]) => {
+                        if (m.has(value)) return [key, m.get(value)];
+                        else return [key, refs(value, m)];
+                    }))
+            };
+        }
+    }
+    return a;
 }
 
 let p = readCompiledFile('../bin/sample.bin');
 parseSections(p);
 
+//console.log(util.inspect(refs(p, new Map()), false, null, true));
