@@ -32,3 +32,7 @@ func_ptr_t ptrs[] = {
 
 static int abc;
 static int* abcptr = &abc + 1;
+
+__attribute__((weak))
+__attribute__((section(".ccvm.heap")))
+unsigned __ccvm_heap_buffer[1024] = {1};

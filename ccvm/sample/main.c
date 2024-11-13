@@ -163,3 +163,7 @@ __attribute__((section(".ccvm.link.symbols"))) char __ccvm_heap_initial_size;
 void* ret_bss() {
     return &__ccvm_section_bss_begin;
 }
+
+__attribute__((weak))
+__attribute__((section(".ccvm.heap")))
+unsigned __ccvm_heap_buffer[1024] = {99};

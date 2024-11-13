@@ -3,6 +3,7 @@ Data memory (`0x00000000`):
 * `.ccvm.registers` - VM registers area
 * `.data` - initialized data
 * `.bss`, `.common` - uninitialized data
+* `.ccvm.heap`, - uninitialized area for heap memory
 
 Program memory (`0x40000000`):
 * `.ccvm.entry` - entry jump

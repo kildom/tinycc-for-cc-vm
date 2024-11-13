@@ -1,4 +1,66 @@
 
+// TODO: Symbol-based approach
+/*
+ * 1. Extract symbol contents from sections
+ *    * Symbol must be self-contained, e.g. cannot reference address from the same section,
+ *      but different symbol. Relocation must be used instead.
+ *    * Data content and relocations are extracted to the symbol.
+ *    * Symbol type is determined based on ".text" prefix
+ * 2. Add predefined symbols
+ * 3. Generate export table
+ * 4. Make symbol that covers entire "export", "init", and "fini" section.
+ * 5. Add IR label object for each symbol.
+ * 6. Translate each symbol to IR (IR never references a label by name, but it holds
+ *    a reference to label object).
+ * 7. Generate import wrappers. Direct calls to imported functions should be converted into
+ *    HOST instruction, so most wrappers will be removed as unused.
+ * 8. Mark symbols that belong to specific sections as used: registers, entry, export, init, fini.
+ *    (todo: check if "used" attribute can be used?)
+ * 9. Mark all referenced symbols as used.
+ * 10. Remove unused symbols.
+ * 12. Sort symbols by: 1) output section location, 2) input section name, 3) address
+ * 13. Combine IR from all symbols
+ * 14. Compile IR into bytecode
+ * 
+ * Maximum size of all symbols from ".ccvm.heap" is taken as a output heap size. All ".ccvm.heap"
+ * will point to the beginning of the heap.
+ * The same for ".ccvm.stack", but actual stack area end will be at the end of data memory making
+ * it bigger than declared (but never smaller).
+ *
+ * import_wrapper:
+ *   .REF entry_preserve_R3_1 # Referencing those labels will enable R3 preserving in entry.
+ *   .REF entry_preserve_R3_2 # If all import_wrappers are removed preserving will be also removed.
+ *   POP R3    # Pop return address, so host will not see it
+ *   HOST ???  # Execute host code, if host calls vm again, entry function should push R3
+ *   PUSH R3
+ *   RETURN
+ *    // TODO: if callee is responsible for parameter cleanup, should the wrappers always be present?
+ *    // TODO: SP must be aligned to 32-bits when calling host, failing to do so causes an error
+ *             and host function will not be called.
+ * 
+ * entry_handler: # section .text.ccvm.entry_handler.0
+ *   .REF entry_handler_continue1
+ *   .REF entry_handler_continue2
+ *   .REF entry_handler_continue3
+ * entry_preserve_R3_1: # section .text.ccvm.entry_handler.1
+ *   PUSH R3
+ * entry_handler_continue2: # section .text.ccvm.entry_handler.2
+ *   MUL R0, 4  # or 2 for small model
+ *   MOV R3, __ccvm_export_table_begin
+ *   ADD R3, R0
+ *   READ32 R3, [R3]  # or READ16U for small model
+ *   CALL R3
+ * entry_preserve_R3_2: # section .text.ccvm.entry_handler.3
+ *   POP R3
+ * entry_handler_continue3: # section .text.ccvm.entry_handler.4
+ *   HOST -1 # Return to host
+ * 
+ * Getting pointers to functions should result in address relative to beginning of program memory
+ * (all with ".text" prefix), but both formats are allowed: 0x4aaaaaaa and 0x0aaaaaaa.
+ * 
+ */
+
+/*
 import * as fs from 'node:fs';
 import * as util from 'node:util';
 
@@ -35,7 +97,7 @@ enum IROpcode {
     INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
     INSTR_RETURN,           // value = cleanup words
     INSTR_LABEL_ALIAS,      // labelAlias = label
-    
+
     INSTR_DATA,
     INSTR_WORD,
     INSTR_FILL,
@@ -120,7 +182,7 @@ export interface Symbol {
     index: number;
     outputName: string;
     section: Section | undefined;
-    absoluteAddr: boolean;
+    defined: boolean;
     addr: number;
     size: number;
     binding: SymbolBinding;
@@ -151,10 +213,12 @@ export interface Program {
     exports: ExportEntry[];
     imports: ImportEntry[];
     importByName: Dict<ImportEntry>;
+    predefinedSymbols: Dict<boolean>;
     outputSections: {
         registers: Section[];
         data: Section[];
         bss: Section[];
+        heap: Section[];
         entry: Section[];
         rodata: Section[];
         exportTable: Section[];
@@ -164,6 +228,32 @@ export interface Program {
         removed: Section[];
     }
     instructions: IRInstruction[];
+};
+
+const predefinedSymbols: Dict<boolean> = {
+    __ccvm_section_ccvm_registers_begin: false,
+    __ccvm_section_ccvm_registers_end: false,
+    __ccvm_section_data_begin: false,
+    __ccvm_section_data_end: false,
+    __ccvm_section_bss_begin: false,
+    __ccvm_section_bss_end: false,
+    __ccvm_section_ccvm_heap_begin: false,
+    __ccvm_section_ccvm_heap_end: false,
+    __ccvm_section_ccvm_entry_begin: false,
+    __ccvm_section_ccvm_entry_end: false,
+    __ccvm_section_rodata_begin: false,
+    __ccvm_section_rodata_end: false,
+    __ccvm_section_ccvm_export_table_begin: false,
+    __ccvm_section_ccvm_export_table_end: false,
+    __ccvm_section_init_array_begin: false,
+    __ccvm_section_init_array_end: false,
+    __ccvm_section_fini_array_begin: false,
+    __ccvm_section_fini_array_end: false,
+    __ccvm_section_text_begin: false,
+    __ccvm_section_text_end: false,
+    __ccvm_section_data_load_begin: false,
+    __ccvm_section_data_load_end: false,
+    __ccvm_data_memory_end: false,
 };
 
 
@@ -231,7 +321,7 @@ function parseSymtab(program: Program, symtab: Section) {
             index: program.symbols.length,
             outputName: `${name}@${section?.id}_${program.symbols.length}`,
             section,
-            absoluteAddr,
+            defined: !!(section || absoluteAddr),
             addr,
             size,
             binding: bind as SymbolBinding,
@@ -239,8 +329,17 @@ function parseSymtab(program: Program, symtab: Section) {
         };
         program.symbols.push(symbol);
         section?.symbols.push(symbol);
-        if (symbol.binding !== SymbolBinding.LOCAL && symbol.section === undefined && symbol.absoluteAddr === false && program.importByName[symbol.name]) {
-            symbol.imported = program.importByName[symbol.name];
+        if (symbol.binding !== SymbolBinding.LOCAL && symbol.section === undefined && !symbol.defined) {
+            if (program.importByName[symbol.name]) {
+                symbol.imported = program.importByName[symbol.name];
+                symbol.defined = true;
+                symbol.outputName = `${symbol.imported.name}@imported_${symbol.imported.index}`;
+            }
+            if (program.predefinedSymbols[symbol.name] !== undefined) {
+                symbol.defined = true;
+                symbol.outputName = symbol.name;
+                program.predefinedSymbols[symbol.name] = true;
+            }
         }
         if (symbol.binding !== SymbolBinding.LOCAL && symbol.section !== undefined && exportByName[symbol.name]) {
             for (let exported of exportByName[symbol.name]) {
@@ -340,6 +439,7 @@ function parseSections(program: Program) {
     parseSectionsData(program, program.outputSections.registers, false);
     parseSectionsData(program, program.outputSections.data, true);
     parseSectionsData(program, program.outputSections.bss, true);
+    parseSectionsData(program, program.outputSections.heap, true);
     program.instructions.push({ opcode: IROpcode.INSTR_PROGRAM });
     console.log('PROGRAM MEMORY');
     parseSectionsData(program, program.outputSections.entry, false);
@@ -498,6 +598,7 @@ function createExportTable(program: Program) {
 const outputSectionsRexExp: { [key in keyof Program['outputSections']]: RegExp } = {
     registers: /^\.ccvm\.registers(\..*)?$/,
     bss: /^\.(bss|common)(\..*)?$/,
+    heap: /^\.ccvm\.heap(\..*)?$/,
     entry: /^\.ccvm\.entry(\..*)?$/,
     rodata: /^\.(rodata(\..*)?|data(\..*)?\.ro)$/,
     data: /^\.data(\..*)?$/,
@@ -618,10 +719,12 @@ function readCompiledFile(fileName: string) {
         exports: [],
         imports: [],
         importByName: Object.create(null),
+        predefinedSymbols: {...predefinedSymbols},
         outputSections: {
             registers: [],
             data: [],
             bss: [],
+            heap: [],
             entry: [],
             rodata: [],
             exportTable: [],
@@ -661,4 +764,5 @@ function refs(a: any, m: Map<any, any>) {
 let p = readCompiledFile('../bin/sample.bin');
 parseSections(p);
 
-//console.log(util.inspect(refs(p, new Map()), false, null, true));
+console.log(util.inspect(refs(p, new Map()), false, null, true));
+*/

@@ -10,3 +10,7 @@ void b() {
         host2(13);
     }
 }
+
+__attribute__((weak))
+__attribute__((section(".ccvm.heap")))
+unsigned __ccvm_heap_buffer[1024] = {2};
