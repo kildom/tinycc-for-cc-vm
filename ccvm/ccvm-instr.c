@@ -27,14 +27,79 @@ enum {
     INSTR_PUSH,             // reg, op2 = 1..4 bytes
     INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
     INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
-    INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
     INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
     INSTR_RETURN,           // value = cleanup words
     INSTR_LABEL_ALIAS,      // labelAlias = label
     INSTR_HOST,             // value = host function index
     INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
     INSTR_POP_BLOCK_CONST,  // value = bytes
+    INSTR_BIN_OP_CONST,     // reg = reg ?? value
 };
+
+enum {
+    BIN_OP_ADD = 0x2B,
+    BIN_OP_SUB = 0x2D,
+    BIN_OP_ADDC = 0x88,
+    BIN_OP_SUBC = 0x8a,
+    BIN_OP_BITAND = 0x26,
+    BIN_OP_BITXOR = 0x5E,
+    BIN_OP_BITOR = 0x7C,
+    BIN_OP_MUL = 0x2A,
+    BIN_OP_SHL = 0x3C,
+    BIN_OP_SHR = 0x8b,
+    BIN_OP_SAR = 0x3E,
+    BIN_OP_DIV = 0x2F,
+    BIN_OP_UDIV = 0x83,
+    BIN_OP_MOD = 0x25,
+    BIN_OP_UMOD = 0x84,
+    BIN_OP_UMULL = 0x86,
+    BIN_OP_CMP = 0xFF,
+};
+
+_Static_assert(BIN_OP_ADD == '+', "BIN_OP_ADD");
+_Static_assert(BIN_OP_SUB == '-', "BIN_OP_SUB");
+_Static_assert(BIN_OP_ADDC == TOK_ADDC2, "BIN_OP_ADDC2");
+_Static_assert(BIN_OP_SUBC == TOK_SUBC2, "BIN_OP_SUBC2");
+_Static_assert(BIN_OP_BITAND == '&', "BIN_OP_BITAND");
+_Static_assert(BIN_OP_BITXOR == '^', "BIN_OP_BITXOR");
+_Static_assert(BIN_OP_BITOR == '|', "BIN_OP_BITOR");
+_Static_assert(BIN_OP_MUL == '*', "BIN_OP_MUL");
+_Static_assert(BIN_OP_SHL == TOK_SHL, "BIN_OP_SHL");
+_Static_assert(BIN_OP_SHR == TOK_SHR, "BIN_OP_SHR");
+_Static_assert(BIN_OP_SAR == TOK_SAR, "BIN_OP_SAR");
+_Static_assert(BIN_OP_DIV == '/', "BIN_OP_DIV");
+_Static_assert(BIN_OP_UDIV == TOK_UDIV, "BIN_OP_UDIV");
+_Static_assert(BIN_OP_MOD == '%', "BIN_OP_MOD");
+_Static_assert(BIN_OP_UMOD == TOK_UMOD, "BIN_OP_UMOD");
+_Static_assert(BIN_OP_UMULL == TOK_UMULL, "BIN_OP_UMULL");
+
+enum {
+    CMP_OP_ULT = 0x92,
+    CMP_OP_UGE = 0x93,
+    CMP_OP_EQ = 0x94,
+    CMP_OP_NE = 0x95,
+    CMP_OP_ULE = 0x96,
+    CMP_OP_UGT = 0x97,
+    CMP_OP_Nset = 0x98,
+    CMP_OP_Nclear = 0x99,
+    CMP_OP_LT = 0x9c,
+    CMP_OP_GE = 0x9d,
+    CMP_OP_LE = 0x9e,
+    CMP_OP_GT = 0x9f,
+};
+
+_Static_assert(CMP_OP_ULT == TOK_ULT, "CMP_OP_ULT");
+_Static_assert(CMP_OP_UGE == TOK_UGE, "CMP_OP_UGE");
+_Static_assert(CMP_OP_EQ == TOK_EQ, "CMP_OP_EQ");
+_Static_assert(CMP_OP_NE == TOK_NE, "CMP_OP_NE");
+_Static_assert(CMP_OP_ULE == TOK_ULE, "CMP_OP_ULE");
+_Static_assert(CMP_OP_UGT == TOK_UGT, "CMP_OP_UGT");
+_Static_assert(CMP_OP_Nset == TOK_Nset, "CMP_OP_Nset");
+_Static_assert(CMP_OP_Nclear == TOK_Nclear, "CMP_OP_Nclear");
+_Static_assert(CMP_OP_LT == TOK_LT, "CMP_OP_LT");
+_Static_assert(CMP_OP_GE == TOK_GE, "CMP_OP_GE");
+_Static_assert(CMP_OP_LE == TOK_LE, "CMP_OP_LE");
+_Static_assert(CMP_OP_GT == TOK_GT, "CMP_OP_GT");
 
 
 typedef struct CCVMInstr {
@@ -173,6 +238,15 @@ static void instrJumpCondLabel(int op, int label) {
     instr->label = label;
 }
 
+static void instrBinOpConst(int op, int a, int value)
+{
+    DEBUG_INSTR("BIN_OP_CONST 0x%02X R%d 0x%08X", op, a, value);
+    CCVMInstr* instr = genInstr(INSTR_BIN_OP_CONST, 0);
+    instr->op2 = op;
+    instr->dstReg = a;
+    instr->value = value;
+}
+
 static void instrBinOp(int op, int a, int b)
 {
     DEBUG_INSTR("BIN_OP 0x%02X R%d R%d", op, a, b);
@@ -181,15 +255,6 @@ static void instrBinOp(int op, int a, int b)
     instr->dstReg = a;
     instr->srcReg = b;
 }
-
-static void instrCmp(int a, int b)
-{
-    DEBUG_INSTR("CMP R%d R%d", a, b);
-    CCVMInstr* instr = genInstr(INSTR_CMP, 0);
-    instr->dstReg = a;
-    instr->srcReg = b;
-}
-
 
 static uint8_t instrReadWriteOp2(char* str, int* value, int bits, int sign_extend, int bp)
 {
@@ -213,7 +278,7 @@ static uint8_t instrReadWriteOp2(char* str, int* value, int bits, int sign_exten
     return res;
 }
 
-static void instrRWReloc(int read, Sym* sym, int reg, int bits, int sign_extend)
+static void instrRWReloc(int read, Sym* sym, int reg, int offset, int bits, int sign_extend)
 {
     char format[128];
     char str[128];
@@ -225,6 +290,7 @@ static void instrRWReloc(int read, Sym* sym, int reg, int bits, int sign_extend)
     CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST, 0);
     instr->op2 = op2;
     instr->reg = reg;
+    instr->value = offset;
 }
 
 static void instrRWConst(int read, int reg, int value, int bits, int sign_extend, int bp)

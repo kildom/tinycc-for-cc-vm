@@ -19,13 +19,13 @@ export enum IROpcode {
     INSTR_PUSH,             // reg, op2 = 1..4 bytes
     INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
     INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
-    INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
     INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
     INSTR_RETURN,           //
     INSTR_LABEL_ALIAS,      // labelAlias = label
     INSTR_HOST,             // value = host function index
     INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
     INSTR_POP_BLOCK_CONST,  // value = bytes
+    INSTR_BIN_OP_CONST,     // reg = reg ?? value
 
     INSTR_JUMP_COND_INSTR,
     INSTR_JUMP_INSTR,
@@ -38,6 +38,41 @@ export enum IROpcode {
     /*INSTR_DISPOSABLE_BEGIN,
     INSTR_DISPOSABLE_END,
     INSTR_LABEL,*/
+};
+
+export enum IRBinOpcode {
+    BIN_OP_ADD = 0x2B,
+    BIN_OP_SUB = 0x2D,
+    BIN_OP_ADDC = 0x88,
+    BIN_OP_SUBC = 0x8a,
+    BIN_OP_BITAND = 0x26,
+    BIN_OP_BITXOR = 0x5E,
+    BIN_OP_BITOR = 0x7C,
+    BIN_OP_MUL = 0x2A,
+    BIN_OP_SHL = 0x3C,
+    BIN_OP_SHR = 0x8b,
+    BIN_OP_SAR = 0x3E,
+    BIN_OP_DIV = 0x2F,
+    BIN_OP_UDIV = 0x83,
+    BIN_OP_MOD = 0x25,
+    BIN_OP_UMOD = 0x84,
+    BIN_OP_UMULL = 0x86,
+    BIN_OP_CMP = 0xFF,
+};
+
+export enum IRCmpOpcode {
+    CMP_OP_ULT = 0x92,
+    CMP_OP_UGE = 0x93,
+    CMP_OP_EQ = 0x94,
+    CMP_OP_NE = 0x95,
+    CMP_OP_ULE = 0x96,
+    CMP_OP_UGT = 0x97,
+    CMP_OP_Nset = 0x98,
+    CMP_OP_Nclear = 0x99,
+    CMP_OP_LT = 0x9c,
+    CMP_OP_GE = 0x9d,
+    CMP_OP_LE = 0x9e,
+    CMP_OP_GT = 0x9f,
 };
 
 // #endregion
@@ -94,14 +129,14 @@ interface IRTwoRegInstruction extends IRInstructionBase {
 }
 
 interface IRTwoRegOpInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_BIN_OP | IROpcode.INSTR_CMP;
+    opcode: IROpcode.INSTR_BIN_OP;
     dstReg: number;
     srcReg: number;
     op: number; // TODO: Split into two interfaces and use enums in op
 }
 
 interface IRConstRWInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_READ_CONST | IROpcode.INSTR_WRITE_CONST;
+    opcode: IROpcode.INSTR_READ_CONST | IROpcode.INSTR_WRITE_CONST | IROpcode.INSTR_BIN_OP_CONST;
     reg: number;
     value: ValueFunction;
     op: number;
@@ -243,7 +278,7 @@ export class ImportSymbol extends SymbolBase {
 }
 
 export class WithIRSymbol extends SymbolBase {
-    public innerSymbols?: (FunctionInnerSymbol | DataInnerSymbol)[];
+    public innerSymbols?: InnerSymbol[];
     public ir?: IRInstruction[];
     public used: boolean = false;
     public constructor(

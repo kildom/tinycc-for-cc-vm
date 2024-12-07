@@ -1,4 +1,4 @@
-import { AbsoluteSymbol, collectAliasedLabels, DataInnerSymbol, DataSymbol, FunctionInnerSymbol, FunctionSymbol, ImportSymbol, InvalidSymbol, IRInstruction, IROpcode, Label, RWOpcodeFlags, SymbolBase, UndefinedSymbol, ValueFunction, WithIRSymbol } from "./ir";
+import { AbsoluteSymbol, collectAliasedLabels, DataSymbol, FunctionInnerSymbol, FunctionSymbol, ImportSymbol, InnerSymbol, InvalidSymbol, IRBinOpcode, IRCmpOpcode, IRInstruction, IROpcode, Label, RWOpcodeFlags, SymbolBase, UndefinedSymbol, ValueFunction, WithIRSymbol } from "./ir";
 import { assertUnreachable } from "./utils";
 
 const map = new Map<any, string>();
@@ -75,11 +75,11 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
                 break;
 
             case IROpcode.INSTR_JUMP_COND_LABEL:  // label, op2 = condition
-                line += `:${instr.condition} ${getLabelStr(instr.label)}`;
+                line += ` IF ${getCondStr(instr.condition)} ${getLabelStr(instr.label)}`;
                 break;
 
             case IROpcode.INSTR_JUMP_COND_INSTR:
-                line += `:${instr.condition} ${getID(instr.instruction)}`;
+                line += ` IF ${getCondStr(instr.condition)} ${getID(instr.instruction)}`;
                 break;
 
             case IROpcode.INSTR_JUMP_CONST:       // address
@@ -125,15 +125,23 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
                 line += ` ${getValueStr(instr.value)}`;
                 break;
 
-            case IROpcode.INSTR_CMP:              // srcReg, dstReg, op2 = comparison operator
-                line += `:${instr.op} R${instr.srcReg} R${instr.dstReg}`;
+            case IROpcode.INSTR_BIN_OP:           // srcReg, dstReg, op2 = operator
+                if (instr.op === IRBinOpcode.BIN_OP_UMULL) {
+                    line += ` R${instr.dstReg}:R${instr.srcReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
+                } else if (instr.op === IRBinOpcode.BIN_OP_CMP) {
+                    line += ` R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
+                } else {
+                    line += ` R${instr.dstReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
+                }
                 break;
 
-            case IROpcode.INSTR_BIN_OP:           // srcReg, dstReg, op2 = operator
-                if (instr.op !== 0x86) {
-                    line += ` R${instr.dstReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
+            case IROpcode.INSTR_BIN_OP_CONST:
+                if (instr.op === IRBinOpcode.BIN_OP_UMULL) {
+                    throw new Error('Invalid instruction');
+                } else if (instr.op === IRBinOpcode.BIN_OP_CMP) {
+                    line += ` R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;
                 } else {
-                    line += ` R${instr.dstReg}:R${instr.srcReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
+                    line += ` R${instr.reg} = R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;
                 }
                 break;
 
@@ -207,7 +215,7 @@ export function dumpIRFromSymbols(symbols: SymbolBase[], commentUnused: boolean 
             console.log(`${prefix}    # UNDEFINED`);
         } else if (symbol instanceof FunctionInnerSymbol) {
             console.log(`${prefix}    # INNER FUNCTION IN ${getID(symbol.parentSymbol)} at ${getID(symbol.instruction)} (0x${(symbol.parentOffset / 12).toString(16).padStart(4, '0')})`);
-        } else if (symbol instanceof DataInnerSymbol) {
+        } else if (symbol instanceof InnerSymbol) {
             console.log(`${prefix}    # INNER DATA IN ${getID(symbol.parentSymbol)} at ${symbol.parentOffset}`);
         } else {
             console.log(`${prefix}    # UNKNOWN KIND OF SYMBOL`);
@@ -222,23 +230,23 @@ export function dumpIRFromSymbols(symbols: SymbolBase[], commentUnused: boolean 
 
 function binOpName(op: number): string {
     switch (op) {
-        case 0x2A:
-        case 0x2B:
-        case 0x2D:
-            return String.fromCharCode(op);
-        case 0x80: return 'DEC';
-        case 0x82: return 'INC';
-        case 0x83: return 'UDIV';
-        case 0x84: return 'UMOD';
-        case 0x85: return 'PDIV';
-        case 0x86: return 'UMUL64';
-        case 0x87: return '+ (keep carry)';
-        case 0x88: return '+ carry +';
-        case 0x89: return '- (keep carry)';
-        case 0x8a: return '- carry -';
-        case 0x3C: return '<<';
-        case 0x3E: return '>>';
-        case 0x8B: return '>>>';
+        case IRBinOpcode.BIN_OP_ADD: return '+';
+        case IRBinOpcode.BIN_OP_SUB: return '-';
+        case IRBinOpcode.BIN_OP_ADDC: return '+ carry +';
+        case IRBinOpcode.BIN_OP_SUBC: return '- carry -';
+        case IRBinOpcode.BIN_OP_BITAND: return '&';
+        case IRBinOpcode.BIN_OP_BITXOR: return '^';
+        case IRBinOpcode.BIN_OP_BITOR: return '|';
+        case IRBinOpcode.BIN_OP_MUL: return '*';
+        case IRBinOpcode.BIN_OP_SHL: return '<<';
+        case IRBinOpcode.BIN_OP_SHR: return '(unsigned) >>';
+        case IRBinOpcode.BIN_OP_SAR: return '(signed) >>';
+        case IRBinOpcode.BIN_OP_DIV: return '(signed) /';
+        case IRBinOpcode.BIN_OP_UDIV: return '(unsigned) /';
+        case IRBinOpcode.BIN_OP_MOD: return '(signed) %';
+        case IRBinOpcode.BIN_OP_UMOD: return '(unsigned) %';
+        case IRBinOpcode.BIN_OP_UMULL: return '**';
+        case IRBinOpcode.BIN_OP_CMP: return '(compare) ?';
         default: return `(?0x${op.toString(16)}?)`;
     }
 }
@@ -268,3 +276,22 @@ function getLabelStr(label: Label) {
     }
     return parts.join(', ');
 }
+
+function getCondStr(op: number) {
+    switch (op) {
+        case IRCmpOpcode.CMP_OP_ULT: return '(unsigned) <';
+        case IRCmpOpcode.CMP_OP_UGE: return '(unsigned) >=';
+        case IRCmpOpcode.CMP_OP_EQ: return '==';
+        case IRCmpOpcode.CMP_OP_NE: return '!=';
+        case IRCmpOpcode.CMP_OP_ULE: return '(unsigned) <=';
+        case IRCmpOpcode.CMP_OP_UGT: return '(unsigned) >';
+        case IRCmpOpcode.CMP_OP_Nset: return 'negative';
+        case IRCmpOpcode.CMP_OP_Nclear: return 'positive';
+        case IRCmpOpcode.CMP_OP_LT: return '(signed) <';
+        case IRCmpOpcode.CMP_OP_GE: return '(signed) >=';
+        case IRCmpOpcode.CMP_OP_LE: return '(signed) <=';
+        case IRCmpOpcode.CMP_OP_GT: return '(signed) >';
+        default: return `unknown ${op.toString(16)}`;
+    }
+}
+

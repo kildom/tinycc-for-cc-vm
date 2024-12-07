@@ -147,7 +147,7 @@ void load(int r, SValue *sv)
         if ((fr & VT_VALMASK) == VT_CONST) {
             /* constant memory reference */
             if (fr & VT_SYM) {
-                instrRWReloc(1, sv->sym, r, bits, sign_extend);
+                instrRWReloc(1, sv->sym, r, fc, bits, sign_extend);
             } else {
                 instrRWConst(1, r, fc, bits, sign_extend, 0);
             }
@@ -232,7 +232,7 @@ void store(int r, SValue *v)
         if ((fr & VT_VALMASK) == VT_CONST) {
             /* constant memory reference */
             if (fr & VT_SYM) {
-                instrRWReloc(0, v->sym, r, bits, 0);
+                instrRWReloc(0, v->sym, r, fc, bits, 0);
             } else {
                 instrRWConst(0, r, fc, bits, 0, 0);
             }
@@ -489,41 +489,83 @@ void gen_opi(int op)
     switch (op)
     {
     case TOK_ADDC1:
-    case TOK_ADDC2:
-    case TOK_SUBC1:
-    case TOK_SUBC2:
-    case TOK_SAR:
-    case '+':
-    case '-':
-    case '*': {
-        gv2(RC_INT, RC_INT);
-        int a = vtop[-1].r;
-        int b = vtop[0].r;
-        vtop--;
-        save_reg_upstack(a, 1);
-        instrBinOp(op, a, b);
+        gen_opi(BIN_OP_ADD);
         return;
-    }
-    case TOK_ULT:
-    case TOK_UGE:
-    case TOK_EQ:
-    case TOK_NE:
-    case TOK_ULE:
-    case TOK_UGT:
-    case TOK_LT:
-    case TOK_GE:
-    case TOK_LE:
-    case TOK_GT: {
-        gv2(RC_INT, RC_INT);
-        int a = vtop[-1].r;
-        int b = vtop[0].r;
-        vtop--;
-        vset_VT_CMP(op);
-        instrCmp(a, b);
+    case TOK_SUBC1:
+        gen_opi(BIN_OP_SUB);
+        return;
+    case TOK_PDIV:
+        gen_opi(BIN_OP_UDIV);
+        return;
+    case BIN_OP_ADD:
+    case BIN_OP_ADDC:
+    case BIN_OP_BITAND:
+    case BIN_OP_BITXOR:
+    case BIN_OP_BITOR:
+    case BIN_OP_MUL:
+    case BIN_OP_SUB:
+    case BIN_OP_SUBC:
+    case BIN_OP_SHL:
+    case BIN_OP_SHR:
+    case BIN_OP_SAR:
+    case BIN_OP_DIV:
+    case BIN_OP_UDIV:
+    case BIN_OP_MOD:
+    case BIN_OP_UMOD:
+    {
+        if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+            vswap();
+            int a = gv(RC_INT);
+            vswap();
+            int value = vtop->c.i;
+            vtop--;
+            save_reg_upstack(a, 1);
+            instrBinOpConst(op, a, value);
+        } else {
+            gv2(RC_INT, RC_INT);
+            int a = vtop[-1].r;
+            int b = vtop[0].r;
+            vtop--;
+            save_reg_upstack(a, 1);
+            instrBinOp(op, a, b);
+        }
         return;
     }
 
-    case TOK_UMULL: {
+    case CMP_OP_ULT:
+    case CMP_OP_UGE:
+    case CMP_OP_EQ:
+    case CMP_OP_NE:
+    case CMP_OP_ULE:
+    case CMP_OP_UGT:
+    case CMP_OP_Nset:
+    case CMP_OP_Nclear:
+    case CMP_OP_LT:
+    case CMP_OP_GE:
+    case CMP_OP_LE:
+    case CMP_OP_GT:
+    {
+        if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+            vswap();
+            int a = gv(RC_INT);
+            vswap();
+            int value = vtop->c.i;
+            vtop--;
+            vset_VT_CMP(op);
+            instrBinOpConst(BIN_OP_CMP, a, value);
+        } else {
+            gv2(RC_INT, RC_INT);
+            int a = vtop[-1].r;
+            int b = vtop[0].r;
+            vtop--;
+            vset_VT_CMP(op);
+            instrBinOp(BIN_OP_CMP, a, b);
+        }
+        return;
+    }
+
+    case BIN_OP_UMULL:
+    {
         gv2(RC_INT, RC_INT);
         int a = vtop[-1].r;
         int b = vtop[0].r;

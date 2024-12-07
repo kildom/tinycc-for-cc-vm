@@ -9,7 +9,7 @@ void print(char* str);
 int fy(short c, char x, short z) {
 back:
     if (c == 0 ? x == 12 && z == 34 : x == 99) {
-        x++;
+        x += 2;
     }
     while (c != 1) {
         c += 2;
@@ -55,7 +55,10 @@ void fx() {
 
 CCVM_EXPORT(7, main);
 
+unsigned short counter;
+
 int main() {
+    ++counter;
     fx();
     if (a()) {
         a();
@@ -221,6 +224,8 @@ long long subll(long long a, long long b) {
     return a - b;
 }
 
+CCVM_EXPORT(5, goto_ptr_test);
+
 void* goto_ptr_test(void* x) {
     if (x == (void*)0) {
         goto start;
@@ -241,7 +246,8 @@ __attribute__((section(".init_array.my")))
 int fsskjdhfgjasdf2 = 2;
 
 
-/*
+CCVM_EXPORT(6, goto_test);
+
 void* goto_test(void* x) {
     if (x == (void*)0) {
         goto start;
@@ -253,7 +259,7 @@ start:
 next:
     return (void*)1; // TODO: Hardfault if this line is return 1;
 }
-*/
+
 
 extern char __ccvm_section_data_begin__;
 extern char __ccvm_load_section_data_begin__;
@@ -269,9 +275,17 @@ void memcpy(void *dest, const void *src, unsigned int size);
 void __ccvm_c_startup__() {
     init_fini_func_t* ptr;
     memcpy(&__ccvm_section_data_begin__, &__ccvm_load_section_data_begin__, (unsigned int)&__ccvm_section_data_end__ - (unsigned int)&__ccvm_section_data_begin__);
-    for (ptr = &__ccvm_section_init_begin__; ptr < &__ccvm_section_init_end__; ptr++) {
+    for (ptr = &__ccvm_section_init_begin__; ptr < &__ccvm_section_init_end__; --ptr) {
         (*ptr)();
     }
+}
+
+CCVM_EXPORT(4, test_arr);
+
+short arr[16];
+
+short test_arr(int index) {
+    return arr[~index];
 }
 
 #endif

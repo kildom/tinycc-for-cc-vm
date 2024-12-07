@@ -656,10 +656,12 @@ export class Parser {
                 this.noRelocation(relocation);
                 return { opcode, references, reg, label: this.getLabel(uintValue), optional: op2 !== 0 };
 
-            case IROpcode.INSTR_CMP:              // srcReg, dstReg, op2 = comparison operator
             case IROpcode.INSTR_BIN_OP:           // srcReg, dstReg, op2 = operator
                 this.noRelocation(relocation);
                 return { opcode, references, dstReg, srcReg, op: op2 };
+
+            case IROpcode.INSTR_BIN_OP_CONST:
+                return { opcode, references, reg, value, op: op2 };
 
             case IROpcode.INSTR_RETURN:           //
                 return { opcode, references }

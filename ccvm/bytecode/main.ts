@@ -1,5 +1,5 @@
 import { dumpIRFromSymbols } from "./dump";
-import { AbsoluteSymbol, DataInnerSymbol, DataSymbol, ExportEntry, FunctionInnerSymbol, FunctionSymbol, ImportSymbol, InnerSymbol, IRInstruction, IRMarkerInstruction, IROpcode, PredefinedSymbols, Section, SymbolBase, ValueFunction, WithIRSymbol } from "./ir";
+import { AbsoluteSymbol, DataSymbol, ExportEntry, FunctionInnerSymbol, FunctionSymbol, ImportSymbol, InnerSymbol, IRInstruction, IRMarkerInstruction, IROpcode, PredefinedSymbols, Section, SymbolBase, ValueFunction, WithIRSymbol } from "./ir";
 import { Parser } from "./parser";
 
 
