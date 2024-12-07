@@ -107,7 +107,14 @@ void load(int r, SValue *sv)
     if (fr & VT_LVAL) {
     
         if (v == VT_LLOCAL) {
-            tcc_error("TODO: VT_LLOCAL");
+            v1.type.t = VT_INT;
+            v1.r = VT_LOCAL | VT_LVAL;
+            v1.c.i = fc;
+            v1.sym = NULL;
+            fr = r;
+            if (!(reg_classes[fr] & RC_INT))
+                fr = get_reg(RC_INT);
+            load(fr, &v1);
         }
 
         int btype = ft & VT_BTYPE;
@@ -149,7 +156,7 @@ void load(int r, SValue *sv)
             instrRWConst(1, r, fc, bits, sign_extend, 1);
             return;
         } else {
-            instrRWInd(1, r, sv->r & VT_VALMASK, bits, sign_extend);
+            instrRWInd(1, r, fr & VT_VALMASK, bits, sign_extend);
             return;
         }
     } else {
@@ -302,7 +309,7 @@ void gfunc_call(int nb_args)
             // allocate register to store the address
             int r = get_reg(RC_INT);
             // allocate the necessary size on stack
-            instrPushBlockConst(r, offsets[arg_index + 1] - offsets[arg_index]);
+            instrPushBlockConst(r, offsets[arg_index + 1] - offsets[arg_index], 0);
             // generate code that copies the structure to newly allocated stack buffer
             vset(&vtop->type, r | VT_LVAL, 0);
             vswap();
@@ -339,13 +346,14 @@ void gfunc_call(int nb_args)
 
     gcall_or_jmp(0);
 
-    // todo: clear parameters on stack if this is ellipsis function
+    if (offset > 0) {
+        instrPopBlockConst(offset);
+    }
 
     vtop--;
     FREE_OR_STACK(offsets);
 }
 
-static int epilogue_ret_cleanup;
 static int prologue_push_label;
 
 /* generate function prolog of type 't' */
@@ -380,7 +388,7 @@ void gfunc_prolog(Sym *func_sym)
     DEBUG_COMMENT("Function %s", get_tok_str(func_sym->v, NULL));
 
     prologue_push_label = get_label(0);
-    instrPushBlockLabel(0, prologue_push_label);
+    instrPushBlockLabel(0, prologue_push_label, 1);
 
     for(param = sym->next; param; param = param->next) {
         // Get parameter information
@@ -394,10 +402,6 @@ void gfunc_prolog(Sym *func_sym)
         // Calculate address for next parameter
         addr += size;
     }
-    // Final alignment
-    addr = (addr + 3) & ~3;
-
-    epilogue_ret_cleanup = (addr - 8) / 4;
 }
 
 /* generate function epilog */
@@ -406,7 +410,7 @@ void gfunc_epilog(void)
     int loc_aligned = (-loc + 3) & -4;
     instrLabel(prologue_push_label, 0, loc_aligned);
     DEBUG_COMMENT("Adjusting function prologue to %d", loc_aligned);
-    instrReturn(epilogue_ret_cleanup);
+    instrReturn();
 }
 
 ST_FUNC void gen_fill_nops(int bytes)
@@ -486,8 +490,11 @@ void gen_opi(int op)
     {
     case TOK_ADDC1:
     case TOK_ADDC2:
+    case TOK_SUBC1:
+    case TOK_SUBC2:
     case TOK_SAR:
     case '+':
+    case '-':
     case '*': {
         gv2(RC_INT, RC_INT);
         int a = vtop[-1].r;
@@ -568,7 +575,8 @@ ST_FUNC void gen_increment_tcov(SValue *sv)
 /* computed goto support */
 void ggoto(void)
 {
-    tcc_error("unimplemented ggoto!");
+    gcall_or_jmp(1);
+    vtop--;
 }
 
 /* Save the stack pointer onto the stack and return the location of its address */

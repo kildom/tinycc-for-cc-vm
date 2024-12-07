@@ -25,44 +25,47 @@ enum {
     INSTR_JUMP_REG,         // reg
     INSTR_CALL_REG,         // reg
     INSTR_PUSH,             // reg, op2 = 1..4 bytes
-    INSTR_PUSH_BLOCK_CONST, // reg, value = block size
-    INSTR_PUSH_BLOCK_LABEL, // reg, label = label containing block size
+    INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
+    INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
     INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
     INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
     INSTR_RETURN,           // value = cleanup words
     INSTR_LABEL_ALIAS,      // labelAlias = label
+    INSTR_HOST,             // value = host function index
+    INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
+    INSTR_POP_BLOCK_CONST,  // value = bytes
 };
 
 
 typedef struct CCVMInstr {
-    union {
-        struct {
-            uint8_t opcode;
-            uint8_t op2;
-            union {
-                uint8_t reg;
-                uint8_t dstReg;
-            };
-            union {
-                uint8_t srcReg;
-                uint8_t addrReg;
-            };
+    struct {
+        uint8_t opcode;
+        uint8_t op2;
+        union {
+            uint8_t reg;
+            uint8_t dstReg;
         };
-        int32_t address_offset;
-        int32_t labelAlias;
+        union {
+            uint8_t srcReg;
+            uint8_t addrReg;
+        };
     };
     union {
         uint32_t value;
         uint32_t address;
         uint32_t label;
     };
+    union {
+        int32_t address_offset;
+        int32_t labelAlias;
+    };
 } CCVMInstr;
 
 
-static CCVMInstr* genInstr(uint8_t opcode)
+static CCVMInstr* genInstr(uint8_t opcode, uint8_t force_output)
 {
     int ind1;
-    if (nocode_wanted) {
+    if (nocode_wanted && !force_output) {
         static CCVMInstr dummy;
         return &dummy;
     }
@@ -86,37 +89,37 @@ static void addReloc(Sym* sym, uint32_t address, int type)
 static void instrMovReloc(int reg, Sym* sym) {
     DEBUG_INSTR("MOV_CONST R%d = %s", reg, get_tok_str(sym->v, NULL));
     addReloc(sym, ind, RELOC_INSTR);
-    genInstr(INSTR_MOV_CONST)->reg = reg;
+    genInstr(INSTR_MOV_CONST, 0)->reg = reg;
 }
 
 static void instrMovConst(int reg, uint32_t value) {
     DEBUG_INSTR("MOV_CONST R%d = 0x%08X", reg, value);
-    CCVMInstr* instr = genInstr(INSTR_MOV_CONST);
+    CCVMInstr* instr = genInstr(INSTR_MOV_CONST, 0);
     instr->reg = reg;
     instr->value = value;
 }
 
 static void instrMovReg(int to, int from) {
     DEBUG_INSTR("MOV_REG R%d = R%d", to, from);
-    CCVMInstr* instr = genInstr(INSTR_MOV_REG);
+    CCVMInstr* instr = genInstr(INSTR_MOV_REG, 0);
     instr->dstReg = to;
     instr->srcReg = from;
 }
 
 static void instrJumpReg(int is_call, int reg) {
     DEBUG_INSTR("%s_REG R%d", is_call ? "CALL" : "JUMP", reg);
-    genInstr(is_call ? INSTR_CALL_REG : INSTR_JUMP_REG)->reg = reg;
+    genInstr(is_call ? INSTR_CALL_REG : INSTR_JUMP_REG, 0)->reg = reg;
 }
 
 static void instrJumpLabel(int label) {
     DEBUG_INSTR("JUMP_CONST label_%d", label);
-    genInstr(INSTR_JUMP_LABEL)->label = label;
+    genInstr(INSTR_JUMP_LABEL, 0)->label = label;
 }
 
 static void instrJumpReloc(int is_call, Sym* sym) {
     DEBUG_INSTR("%s_CONST %s", is_call ? "CALL" : "JUMP", get_tok_str(sym->v, NULL));
     addReloc(sym, ind, RELOC_INSTR);
-    genInstr(is_call ? INSTR_CALL_CONST : INSTR_JUMP_CONST);
+    genInstr(is_call ? INSTR_CALL_CONST : INSTR_JUMP_CONST, 0);
 }
 
 static void instrPush(int bits, int reg) {
@@ -130,34 +133,42 @@ static void instrPush(int bits, int reg) {
         default: tcc_error("Internal error: invalid number of bits to push."); break;
     }
     DEBUG_INSTR("PUSH%d R%d", bits, reg);
-    CCVMInstr* instr = genInstr(INSTR_PUSH);
+    CCVMInstr* instr = genInstr(INSTR_PUSH, 0);
     instr->op2 = op2;
     instr->reg = reg;
 }
 
-static void instrPushBlockLabel(int reg, int label) {
+static void instrPushBlockLabel(int reg, int label, uint8_t optional) {
     DEBUG_INSTR("PUSH_BLOCK R%d, label_%d", reg, label);
-    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_LABEL);
+    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_LABEL, 0);
     instr->reg = reg;
     instr->label = label;
+    instr->op2 = optional;
 }
 
-static void instrPushBlockConst(int reg, int size) {
+static void instrPushBlockConst(int reg, int size, uint8_t optional) {
     DEBUG_INSTR("PUSH_BLOCK R%d, %d", reg, size);
-    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_CONST);
+    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_CONST, 0);
     instr->reg = reg;
+    instr->value = size;
+    instr->op2 = optional;
+}
+
+static void instrPopBlockConst(int size) {
+    DEBUG_INSTR("POP_BLOCK %d", size);
+    CCVMInstr* instr = genInstr(INSTR_POP_BLOCK_CONST, 0);
     instr->value = size;
 }
 
-static void instrReturn(int cleanupWords) {
-    DEBUG_INSTR("RETURN %d", cleanupWords);
-    genInstr(INSTR_RETURN)->value = cleanupWords;
+static void instrReturn() {
+    DEBUG_INSTR("RETURN");
+    genInstr(INSTR_RETURN, 0);
 }
 
 
 static void instrJumpCondLabel(int op, int label) {
     DEBUG_INSTR("JUMP_IF 0x%02X [...reloc...]", op);
-    CCVMInstr* instr = genInstr(INSTR_JUMP_COND_LABEL);
+    CCVMInstr* instr = genInstr(INSTR_JUMP_COND_LABEL, 0);
     instr->op2 = op;
     instr->label = label;
 }
@@ -165,7 +176,7 @@ static void instrJumpCondLabel(int op, int label) {
 static void instrBinOp(int op, int a, int b)
 {
     DEBUG_INSTR("BIN_OP 0x%02X R%d R%d", op, a, b);
-    CCVMInstr* instr = genInstr(INSTR_BIN_OP);
+    CCVMInstr* instr = genInstr(INSTR_BIN_OP, 0);
     instr->op2 = op;
     instr->dstReg = a;
     instr->srcReg = b;
@@ -174,7 +185,7 @@ static void instrBinOp(int op, int a, int b)
 static void instrCmp(int a, int b)
 {
     DEBUG_INSTR("CMP R%d R%d", a, b);
-    CCVMInstr* instr = genInstr(INSTR_CMP);
+    CCVMInstr* instr = genInstr(INSTR_CMP, 0);
     instr->dstReg = a;
     instr->srcReg = b;
 }
@@ -211,7 +222,7 @@ static void instrRWReloc(int read, Sym* sym, int reg, int bits, int sign_extend)
     sprintf(str, format, reg);
     DEBUG_INSTR("%s%s", str, get_tok_str(sym->v, NULL));
     addReloc(sym, ind, RELOC_INSTR);
-    CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST);
+    CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST, 0);
     instr->op2 = op2;
     instr->reg = reg;
 }
@@ -224,7 +235,7 @@ static void instrRWConst(int read, int reg, int value, int bits, int sign_extend
     uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, bp);
     sprintf(str, format, reg);
     DEBUG_INSTR("%s0x%08X", str, value);
-    CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST);
+    CCVMInstr* instr = genInstr(read ? INSTR_READ_CONST : INSTR_WRITE_CONST, 0);
     instr->op2 = op2;
     instr->reg = reg;
     instr->value = value;
@@ -232,13 +243,16 @@ static void instrRWConst(int read, int reg, int value, int bits, int sign_extend
 
 static void instrRWInd(int read, int reg, int addrReg, int bits, int sign_extend)
 {
+    if (addrReg == 49) {
+        addrReg = 0;
+    }
     char format[128];
     char str[128];
     strcpy(format, read ? "READ" : "WRITE");
     uint8_t op2 = instrReadWriteOp2(format, NULL, bits, sign_extend, 0);
     sprintf(str, format, reg);
     DEBUG_INSTR("%s[R%d]", str, addrReg);
-    CCVMInstr* instr = genInstr(read ? INSTR_READ_REG : INSTR_WRITE_REG);
+    CCVMInstr* instr = genInstr(read ? INSTR_READ_REG : INSTR_WRITE_REG, 0);
     instr->op2 = op2;
     instr->reg = reg;
     instr->addrReg = addrReg;
@@ -247,7 +261,7 @@ static void instrRWInd(int read, int reg, int addrReg, int bits, int sign_extend
 static void instrLabel(int label, int relative, int offset)
 {
     DEBUG_INSTR("LABEL label_%d = %s0x%08X", label, relative ? "rel " : "", offset);
-    CCVMInstr* instr = genInstr(relative ? INSTR_LABEL_RELATIVE : INSTR_LABEL_ABSOLUTE);
+    CCVMInstr* instr = genInstr(relative ? INSTR_LABEL_RELATIVE : INSTR_LABEL_ABSOLUTE, 1);
     instr->label = label;
     instr->address_offset = offset;
 }
@@ -255,7 +269,7 @@ static void instrLabel(int label, int relative, int offset)
 static void instrLabelAlias(int labelA, int labelB)
 {
     DEBUG_INSTR("ALIAS label_%d = label_%d", labelA, labelB);
-    CCVMInstr* instr = genInstr(INSTR_LABEL_ALIAS);
+    CCVMInstr* instr = genInstr(INSTR_LABEL_ALIAS, 1);
     instr->label = labelA;
     instr->labelAlias = labelB;
 }

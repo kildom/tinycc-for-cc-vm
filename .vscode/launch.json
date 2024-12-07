@@ -9,13 +9,13 @@
             "name": "compiler",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc.exe",
+            "program": "${workspaceFolder}/ccvm/bin/ccvm-tcc",
             "args": [
                 "-c",
                 "-I../include",
-                "sample/a.c",
+                "sample/main.c",
                 "-o",
-                "bin/sample_a.o"
+                "bin/sample_main.o"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/ccvm",

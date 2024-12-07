@@ -1,4 +1,4 @@
-
+#if 1
 #include "header.h"
 
 CCVM_IMPORT(2, host2);
@@ -14,3 +14,4 @@ void b() {
 __attribute__((weak))
 __attribute__((section(".ccvm.heap")))
 unsigned __ccvm_heap_buffer[1024] = {2};
+#endif
