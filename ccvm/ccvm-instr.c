@@ -34,6 +34,8 @@ enum {
     INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
     INSTR_POP_BLOCK_CONST,  // value = bytes
     INSTR_BIN_OP_CONST,     // reg = reg ?? value
+    INSTR_NOOP,             // value = bytes
+    INSTR_PUSH_BLOCK_REG,   // dstReg = block size srcReg
 };
 
 enum {
@@ -219,6 +221,13 @@ static void instrPopBlockConst(int size) {
     instr->value = size;
 }
 
+static void instrPushBlockReg(int dstReg, int srcReg) {
+    DEBUG_INSTR("PUSH_BLOCK R%d, size R%d", dstReg, srcReg);
+    CCVMInstr* instr = genInstr(INSTR_PUSH_BLOCK_REG, 0);
+    instr->dstReg = dstReg;
+    instr->srcReg = srcReg;
+}
+
 static void instrReturn() {
     DEBUG_INSTR("RETURN");
     genInstr(INSTR_RETURN, 0);
@@ -332,4 +341,11 @@ static void instrLabelAlias(int labelA, int labelB)
     CCVMInstr* instr = genInstr(INSTR_LABEL_ALIAS, 1);
     instr->label = labelA;
     instr->labelAlias = labelB;
+}
+
+static void instrNoop(int bytes)
+{
+    DEBUG_INSTR("NOOP %d bytes", bytes);
+    CCVMInstr* instr = genInstr(INSTR_NOOP, 0);
+    instr->value = bytes;
 }

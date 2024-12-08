@@ -281,16 +281,17 @@ void __ccvm_c_startup__() {
 }
 
 CCVM_EXPORT(4, test_arr);
+
+int arr[16];
+
+int test_arr(int index, int b) {
+    return index > b;
+}
+
+/*
 CCVM_EXPORT(10, test_arr_float);
 CCVM_EXPORT(11, test_arr_double);
 CCVM_EXPORT(12, test_arr_ldouble);
-
-short arr[16];
-
-long long test_arr(long long index) {
-    return index * index;
-}
-
 float test_arr_float(float index) {
     return index + 1.0f;
 }
@@ -302,5 +303,6 @@ double test_arr_double(double index) {
 long double test_arr_ldouble(long double index) {
     return index + 1.0l;
 }
+*/
 
 #endif

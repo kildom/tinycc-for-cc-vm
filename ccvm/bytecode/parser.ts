@@ -594,6 +594,13 @@ export class Parser {
                 this.noRelocation(relocation);
                 return { opcode, references, dstReg, srcReg };
 
+            case IROpcode.INSTR_PUSH_BLOCK_REG:          // dstReg = BLOCK of srcReg bytes
+                this.noRelocation(relocation);
+                return { opcode, references, dstReg, srcReg };
+
+            case IROpcode.INSTR_NOOP:
+                return { opcode, references, value };
+
             case IROpcode.INSTR_MOV_CONST:        // reg = value
                 return { opcode, references, reg, value };
 

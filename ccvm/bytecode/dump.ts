@@ -35,6 +35,14 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
                 line += ` R${instr.dstReg} = R${instr.srcReg}`;
                 break;
 
+            case IROpcode.INSTR_PUSH_BLOCK_REG:          // dstReg = BLOCK OF srcReg bytes
+                line += ` R${instr.dstReg} = BLOCK of R${instr.srcReg} bytes`;
+                break;
+
+            case IROpcode.INSTR_NOOP:
+                line += ` ${instr.value} bytes`;
+                break;
+
             case IROpcode.INSTR_MOV_CONST:        // reg = value
                 line += ` R${instr.reg} = ${getValueStr(instr.value)}`;
                 break;

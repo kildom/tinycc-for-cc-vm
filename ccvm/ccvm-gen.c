@@ -70,6 +70,36 @@ enum {
 #include "ccvm-output.c"
 #include "ccvm-link.c"
 
+#define R0_ADDR (0 * 4)
+#define X0_ADDR (1 * 4)
+#define R1_ADDR (2 * 4)
+#define X1_ADDR (3 * 4)
+#define R2_ADDR (4 * 4)
+#define X2_ADDR (5 * 4)
+#define R3_ADDR (6 * 4)
+#define X3_ADDR (7 * 4)
+#define SP_ADDR (8 * 4)
+#define PC_ADDR (9 * 4)
+#define BP_ADDR (10 * 4)
+#define FLAGS_ADDR (11 * 4)
+#define STASH_ADDR (12 * 4)
+
+int reg_addr(int reg) {
+    switch (reg) {
+    case TREG_R0: return R0_ADDR;
+    case TREG_R1: return R1_ADDR;
+    case TREG_R2: return R2_ADDR;
+    case TREG_R3: return R3_ADDR;
+    case TREG_X0: return X0_ADDR;
+    case TREG_X1: return X1_ADDR;
+    case TREG_X2: return X2_ADDR;
+    case TREG_X3: return X3_ADDR;
+    default: 
+        tcc_error("INTERNAL ERROR: Using invalid register.");
+        return 0;
+    }
+}
+
 ST_DATA const char * const target_machine_defs =
     "__ccvm__\0"
     "__ccvm\0"
@@ -109,8 +139,6 @@ int get_label(int t) {
 /* load 'r' from value 'sv' */
 void load(int r, SValue *sv)
 {
-    //DEBUG_COMMENT("load r%d <- type:%d r:0x%04X r2:0x%04X C:0x%08lX", r, sv->type.t, sv->r, sv->r2, sv->c.i);
-
     int v, t, ft, fc, fr;
     SValue v1;
 
@@ -123,7 +151,9 @@ void load(int r, SValue *sv)
     v = fr & VT_VALMASK;
 
     if (fr & VT_LVAL) {
-    
+
+        // Load data from memory
+
         if (v == VT_LLOCAL) {
             v1.type.t = VT_INT;
             v1.r = VT_LOCAL | VT_LVAL;
@@ -163,64 +193,82 @@ void load(int r, SValue *sv)
         }
 
         if ((fr & VT_VALMASK) == VT_CONST) {
-            /* constant memory reference */
+            // Constant memory reference
             if (fr & VT_SYM) {
                 instrRWReloc(1, sv->sym, r, fc, bits, sign_extend);
             } else {
                 instrRWConst(1, r, fc, bits, sign_extend, 0);
             }
-            return;
         } else if ((fr & VT_VALMASK) == VT_LOCAL) {
+            // Local variable
             instrRWConst(1, r, fc, bits, sign_extend, 1);
-            return;
         } else {
+            // Indirect access from fr register
             instrRWInd(1, r, fr & VT_VALMASK, bits, sign_extend);
-            return;
         }
-    } else {
-        if (v == VT_CONST) {
 
-            if (fr & VT_SYM) {
-                instrMovReloc(r, sv->sym);
-            } else {
-                instrMovConst(r, fc);
-            }
-            return;
+    } else if (v == VT_CONST) {
 
-            #if 0
-        } else if (v == VT_LOCAL) {
-            if (fc) {
-                o(0x8d); /* lea xxx(%ebp), r */
-                gen_modrm(r, VT_LOCAL, sv->sym, fc);
+        // Load constant value into register either from symbol or absolute.
+        if (fr & VT_SYM) {
+            instrMovReloc(r, sv->sym);
+        } else {
+            instrMovConst(r, fc);
+        }
+
+    } else if (v == VT_LOCAL) {
+
+        // Calculate address of local variable, e.g. int x; f(&x);
+        instrRWConst(1, r, BP_ADDR, 32, 0, 0);
+        if (fc) {
+            instrBinOpConst(BIN_OP_ADD, r, fc);
+        }
+
+    } else if (v == VT_CMP) {
+
+        // Load comparision result into register, e.g. int x = (a < b);
+        int label = get_label(0);
+        instrMovConst(r, 1);
+        instrJumpCondLabel(vtop->cmp_op, label);
+        instrMovConst(r, 0);
+        instrLabel(label, 1, 0);
+
+    } else if (v == VT_JMP || v == VT_JMPI) {
+
+        // Load logic or/and result into register, e.g. int x = (a || b);
+        int label = get_label(0);
+        instrMovConst(r, v & 1);
+        instrJumpLabel(label);
+        gsym(fc);
+        instrMovConst(r, (v & 1) ^ 1);
+        instrLabel(label, 1, 0);
+
+    } else if (v != r) {
+
+        // Move between registers, Xn registers also supported
+        if (v >= TREG_X0) {
+            if (r >= TREG_X0) {
+                int tmp_reg = 0;
+                instrRWConst(0, tmp_reg, STASH_ADDR, 32, 0, 0);
+                instrRWConst(1, tmp_reg, reg_addr(v), 32, 0, 0);
+                instrRWConst(0, tmp_reg, reg_addr(r), 32, 0, 0);
+                instrRWConst(1, tmp_reg, STASH_ADDR, 32, 0, 0);
             } else {
-                o(0x89);
-                o(0xe8 + r); /* mov %ebp, r */
+                instrRWConst(1, r, reg_addr(v), 32, 0, 0);
             }
-        } else if (v == VT_CMP) {
-            o(0x0f); /* setxx %br */
-            o(fc);
-            o(0xc0 + r);
-            o(0xc0b60f + r * 0x90000); /* movzbl %al, %eax */
-        } else if (v == VT_JMP || v == VT_JMPI) {
-            t = v & 1;
-            oad(0xb8 + r, t); /* mov $1, r */
-            o(0x05eb); /* jmp after */
-            gsym(fc);
-            oad(0xb8 + r, t ^ 1); /* mov $0, r */
-            #endif
-        } else if (v != r) {
-            if (v >= TREG_X0) {
-                instrRWConst(1, r, 1 + 8 * (v - TREG_X0), 32, 0, 0);
+        } else {
+            if (r >= TREG_X0) {
+                instrRWConst(0, v, reg_addr(r), 32, 0, 0);
             } else {
                 instrMovReg(r, v);
             }
-            return;
-        } else {
-            // Nothing to do here
-            return;
         }
+
+    } else {
+
+        // Nothing to do here, no need to move any thing if both registers are the same.
+
     }
-    tcc_error("load unimplemented!");
 }
 
 /* store register 'r' in lvalue 'v' */
@@ -234,46 +282,72 @@ void store(int r, SValue *v)
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
     bt = ft & VT_BTYPE;
 
-    int bits;
-
-    if (bt == VT_FLOAT) {
-        bits = 32;
-    } else if (bt == VT_DOUBLE) {
-        bits = 64;
-    } else if (bt == VT_LDOUBLE) {
-        bits = 64;
-    } else if (bt == VT_SHORT) {
-        bits = 16;
-    } else if (bt == VT_BYTE || bt == VT_BOOL) {
-        bits = 8;
-    } else {
-        bits = 32;
-    }
-
     if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) {
+
+        // Store value into memory
+
+        int bits;
+        if (bt == VT_FLOAT) {
+            bits = 32;
+        } else if (bt == VT_DOUBLE) {
+            bits = 64;
+        } else if (bt == VT_LDOUBLE) {
+            bits = 64;
+        } else if (bt == VT_SHORT) {
+            bits = 16;
+        } else if (bt == VT_BYTE || bt == VT_BOOL) {
+            bits = 8;
+        } else {
+            bits = 32;
+        }
+
         if ((fr & VT_VALMASK) == VT_CONST) {
-            /* constant memory reference */
+            // Constant memory reference
             if (fr & VT_SYM) {
                 instrRWReloc(0, v->sym, r, fc, bits, 0);
             } else {
                 instrRWConst(0, r, fc, bits, 0, 0);
             }
         } else if ((fr & VT_VALMASK) == VT_LOCAL) {
+            // Local variable
             instrRWConst(0, r, fc, bits, 0, 1);
         } else {
+            // Indirect access from v->r register
             instrRWInd(0, r, v->r & VT_VALMASK, bits, 0);
         }
+
     } else if (fr != r) {
-        instrMovReg(r, fr);
+
+        // Move between registers, Xn registers also supported
+        if (fr >= TREG_X0) {
+            if (r >= TREG_X0) {
+                int tmp_reg = 0;
+                instrRWConst(0, tmp_reg, STASH_ADDR, 32, 0, 0);
+                instrRWConst(1, tmp_reg, reg_addr(fr), 32, 0, 0);
+                instrRWConst(0, tmp_reg, reg_addr(r), 32, 0, 0);
+                instrRWConst(1, tmp_reg, STASH_ADDR, 32, 0, 0);
+            } else {
+                instrRWConst(1, r, reg_addr(fr), 32, 0, 0);
+            }
+        } else {
+            if (r >= TREG_X0) {
+                instrRWConst(0, fr, reg_addr(r), 32, 0, 0);
+            } else {
+                instrMovReg(r, fr);
+            }
+        }
+
     } else {
-        // Copy the same register
+
+        // Nothing to do here, no need to move any thing if both registers are the same.
+
     }
 }
 
 /* Return the number of registers needed to return the struct, or 0 if
    returning via struct pointer. */
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) {
-    tcc_error("gfunc_sret unimplemented");
+    *ret_align = 1; // Never have to re-align return values
     return 0;
 }
 
@@ -439,7 +513,7 @@ void gfunc_epilog(void)
 
 ST_FUNC void gen_fill_nops(int bytes)
 {
-    tcc_error("gen_fill_nops unimplemented");
+    instrNoop(bytes);
 }
 
 /* generate a jump to a label */
@@ -456,31 +530,6 @@ ST_FUNC void gjmp_addr(int a)
     int label = get_label(0);
     instrLabel(label, 1, a - ind);
     instrJumpLabel(label);
-}
-
-const char* tok_to_str(int tok) {
-    static char tmp[2] = "\0";
-    switch (tok) {
-    case TOK_SAR: return ">> (s)";
-    case TOK_ULT: return "< (u)";
-    case TOK_UGE: return ">= (u)";
-    case TOK_EQ: return "==";
-    case TOK_NE: return "!=";
-    case TOK_ULE: return "<= (u)";
-    case TOK_UGT: return "> (u)";
-    case TOK_LT: return "<";
-    case TOK_GE: return ">=";
-    case TOK_LE: return "<=";
-    case TOK_GT: return ">";
-    case TOK_UMULL: return "**";
-    default:
-        if (tok > ' ' && tok <= '\x7F') {
-            tmp[0] = tok;
-            return tmp;
-        } else {
-            return "???";
-        }
-    }
 }
 
 ST_FUNC int gjmp_cond(int op, int t)
@@ -615,7 +664,7 @@ void gen_opi(int op)
  *    two operands are guaranteed to have the same floating point type */
 void gen_opf(int op)
 {
-    switch (op)
+    /*switch (op)
     {
     case '+':
     {
@@ -639,7 +688,7 @@ void gen_opf(int op)
 
     default:
         break;
-    }
+    }*/
     tcc_error("gen_opf %d unimplemented", op);
 }
 
@@ -662,12 +711,6 @@ void gen_cvt_ftof(int t)
     tcc_error("unimplemented gen_cvt_ftof!");
 }
 
-/* increment tcov counter */
-ST_FUNC void gen_increment_tcov(SValue *sv)
-{
-    tcc_error("unimplemented gen_increment_tcov!");
-}
-
 /* computed goto support */
 void ggoto(void)
 {
@@ -675,22 +718,38 @@ void ggoto(void)
     vtop--;
 }
 
-/* Save the stack pointer onto the stack and return the location of its address */
+/* Save the stack pointer onto the stack */
 ST_FUNC void gen_vla_sp_save(int addr)
 {
-    tcc_error("unimplemented gen_vla_sp_save!");
+    DEBUG_COMMENT("gen_vla_sp_save %d", addr);
+    int tmp_reg = 0;
+    instrRWConst(0, tmp_reg, STASH_ADDR, 32, 0, 0);
+    instrRWConst(1, tmp_reg, SP_ADDR, 32, 0, 0);
+    instrRWConst(0, tmp_reg, addr, 32, 0, 1);
+    instrRWConst(1, tmp_reg, STASH_ADDR, 32, 0, 0);
 }
 
 /* Restore the SP from a location on the stack */
 ST_FUNC void gen_vla_sp_restore(int addr)
 {
-    tcc_error("unimplemented gen_vla_sp_restore!");
+    DEBUG_COMMENT("gen_vla_sp_restore %d", addr);
+    int tmp_reg = 0;
+    instrRWConst(0, tmp_reg, STASH_ADDR, 32, 0, 0);
+    instrRWConst(1, tmp_reg, addr, 32, 0, 1);
+    instrRWConst(0, tmp_reg, SP_ADDR, 32, 0, 0);
+    instrRWConst(1, tmp_reg, STASH_ADDR, 32, 0, 0);
 }
 
 /* Subtract from the stack pointer, and push the resulting value onto the stack */
 ST_FUNC void gen_vla_alloc(CType *type, int align)
 {
-    tcc_error("unimplemented gen_vla_alloc!");
+    DEBUG_COMMENT("gen_vla_alloc %d", align);
+    int reg = gv(RC_INT); /* allocation size */
+    save_reg_upstack(reg, 1);
+    instrBinOpConst(BIN_OP_ADD, reg, 3);
+    instrBinOpConst(BIN_OP_BITAND, reg, 0xFFFFFFFC);
+    instrPushBlockReg(reg, reg);
+    vpop();
 }
 
 ST_FUNC void gsym_addr(int t, int a)

@@ -26,6 +26,8 @@ export enum IROpcode {
     INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
     INSTR_POP_BLOCK_CONST,  // value = bytes
     INSTR_BIN_OP_CONST,     // reg = reg ?? value
+    INSTR_NOOP,             // value = bytes
+    INSTR_PUSH_BLOCK_REG,   // dstReg = block size srcReg
 
     INSTR_JUMP_COND_INSTR,
     INSTR_JUMP_INSTR,
@@ -120,7 +122,7 @@ interface IREmptyInstruction extends IRInstructionBase {
 }
 
 interface IRTwoRegInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_MOV_REG;
+    opcode: IROpcode.INSTR_MOV_REG | IROpcode.INSTR_PUSH_BLOCK_REG;
     dstReg: number;
     srcReg: number;
 }
@@ -140,7 +142,7 @@ interface IRConstRWInstruction extends IRInstructionBase {
 }
 
 interface IRWithValueInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_WORD | IROpcode.INSTR_CALL_CONST | IROpcode.INSTR_JUMP_CONST | IROpcode.INSTR_HOST | IROpcode.INSTR_POP_BLOCK_CONST;
+    opcode: IROpcode.INSTR_WORD | IROpcode.INSTR_CALL_CONST | IROpcode.INSTR_JUMP_CONST | IROpcode.INSTR_HOST | IROpcode.INSTR_POP_BLOCK_CONST | IROpcode.INSTR_NOOP;
     value: ValueFunction;
 }
 
