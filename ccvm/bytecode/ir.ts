@@ -54,9 +54,6 @@ export enum IRBinOpcode {
     BIN_OP_SAR = 0x3E,
     BIN_OP_DIV = 0x2F,
     BIN_OP_UDIV = 0x83,
-    BIN_OP_MOD = 0x25,
-    BIN_OP_UMOD = 0x84,
-    BIN_OP_UMULL = 0x86,
     BIN_OP_CMP = 0xFF,
 };
 

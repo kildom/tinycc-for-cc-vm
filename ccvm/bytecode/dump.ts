@@ -126,20 +126,20 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
                 break;
 
             case IROpcode.INSTR_BIN_OP:           // srcReg, dstReg, op2 = operator
-                if (instr.op === IRBinOpcode.BIN_OP_UMULL) {
-                    line += ` R${instr.dstReg}:R${instr.srcReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
-                } else if (instr.op === IRBinOpcode.BIN_OP_CMP) {
+                if (instr.op === IRBinOpcode.BIN_OP_CMP) {
                     line += ` R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
+                } else if (instr.op === IRBinOpcode.BIN_OP_MUL || instr.op === IRBinOpcode.BIN_OP_DIV || instr.op === IRBinOpcode.BIN_OP_UDIV) {
+                    line += ` R${instr.dstReg}:X${instr.dstReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
                 } else {
                     line += ` R${instr.dstReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
                 }
                 break;
 
             case IROpcode.INSTR_BIN_OP_CONST:
-                if (instr.op === IRBinOpcode.BIN_OP_UMULL) {
-                    throw new Error('Invalid instruction');
-                } else if (instr.op === IRBinOpcode.BIN_OP_CMP) {
+                if (instr.op === IRBinOpcode.BIN_OP_CMP) {
                     line += ` R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;
+                } else if (instr.op === IRBinOpcode.BIN_OP_MUL || instr.op === IRBinOpcode.BIN_OP_DIV || instr.op === IRBinOpcode.BIN_OP_UDIV) {
+                    line += ` R${instr.reg}:X${instr.reg} = R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;
                 } else {
                     line += ` R${instr.reg} = R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;
                 }
@@ -243,9 +243,6 @@ function binOpName(op: number): string {
         case IRBinOpcode.BIN_OP_SAR: return '(signed) >>';
         case IRBinOpcode.BIN_OP_DIV: return '(signed) /';
         case IRBinOpcode.BIN_OP_UDIV: return '(unsigned) /';
-        case IRBinOpcode.BIN_OP_MOD: return '(signed) %';
-        case IRBinOpcode.BIN_OP_UMOD: return '(unsigned) %';
-        case IRBinOpcode.BIN_OP_UMULL: return '**';
         case IRBinOpcode.BIN_OP_CMP: return '(compare) ?';
         default: return `(?0x${op.toString(16)}?)`;
     }

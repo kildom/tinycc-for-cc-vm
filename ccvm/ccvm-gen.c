@@ -1,7 +1,7 @@
 
 #if defined(TARGET_DEFS_ONLY) || defined(INTELLISENSE)
 /* number of available registers */
-#define NB_REGS 4
+#define NB_REGS 8
 
 /* a register can belong to several classes. The classes must be
    sorted from more general to more precise (see gv2() code which does
@@ -11,6 +11,10 @@
 #define RC_R1      0x0004
 #define RC_R2      0x0008
 #define RC_R3      0x0010
+#define RC_X0      0x0020
+#define RC_X1      0x0040
+#define RC_X2      0x0080
+#define RC_X3      0x0100
 #define RC_IRET    RC_R0  /* function return: integer register */
 #define RC_IRE2    RC_R1  /* function return: second integer register */
 #define RC_FRET    RC_R0  /* function return: float register */
@@ -22,6 +26,10 @@ enum {
     TREG_R1,
     TREG_R2,
     TREG_R3,
+    TREG_X0 = TREG_R0 + 4,
+    TREG_X1,
+    TREG_X2,
+    TREG_X3,
 };
 
 /* return registers for function */
@@ -72,6 +80,10 @@ ST_DATA const int reg_classes[NB_REGS] = {
     RC_INT | RC_R1, // R1
     RC_INT | RC_R2, // R2
     RC_INT | RC_R3, // R3
+    RC_X0, // X0
+    RC_X1, // X1
+    RC_X2, // X2
+    RC_X3, // X3
 };
 
 const char *default_elfinterp(struct TCCState *s)
@@ -79,6 +91,12 @@ const char *default_elfinterp(struct TCCState *s)
     return "/lib/ld-linux.so.3"; // TODO: may be removed
 }
 
+static int my_type_size(CType *type, int *a)
+{
+    int r = type_size(type, a);
+    if (a && *a > 4) *a = 4;
+    return r;
+}
 
 int get_label(int t) {
     static int label_number = 1;
@@ -191,7 +209,11 @@ void load(int r, SValue *sv)
             oad(0xb8 + r, t ^ 1); /* mov $0, r */
             #endif
         } else if (v != r) {
-            instrMovReg(r, v);
+            if (v >= TREG_X0) {
+                instrRWConst(1, r, 1 + 8 * (v - TREG_X0), 32, 0, 0);
+            } else {
+                instrMovReg(r, v);
+            }
             return;
         } else {
             // Nothing to do here
@@ -295,7 +317,7 @@ void gfunc_call(int nb_args)
         SValue* arg = vtop - nb_args + 1 + i;
         // calculate size, alignment, and offset
         int align;
-        int size = type_size(&vtop->type, &align);
+        int size = my_type_size(&vtop->type, &align);
         int offset_aligned = (offset + align - 1) & ~(align - 1);
         offsets[i] = offset_aligned;
         offset = offset_aligned + size;
@@ -324,7 +346,7 @@ void gfunc_call(int nb_args)
             int r = gv(RC_INT);
             // verify if we have correct size and alignment after conversion to register
             int align;
-            int size = type_size(&vtop->type, &align);
+            int size = my_type_size(&vtop->type, &align);
             int aligned_size = offsets[arg_index + 1] - offsets[arg_index];
             if ((offsets[arg_index] & (align - 1)) || size > aligned_size) {
                 tcc_error("Internal error. Failed to evaluate expression to integer register.");
@@ -337,8 +359,10 @@ void gfunc_call(int nb_args)
                     // Push dummy data, although this should never happen
                     instrPush(32, vtop->r);
                 }
+                instrPush(32, vtop->r);
+            } else {
+                instrPush(aligned_size * 8, vtop->r);
             }
-            instrPush(aligned_size * 8, vtop->r);
         }
         vtop--;
     }
@@ -394,7 +418,7 @@ void gfunc_prolog(Sym *func_sym)
         // Get parameter information
         CType* type = &param->type;
         int align;
-        int size = type_size(type, &align);
+        int size = my_type_size(type, &align);
         // Align parameter address to its natural alignment
         addr = (addr + align - 1) & ~(align - 1);
         // Push parameter symbol
@@ -497,6 +521,9 @@ void gen_opi(int op)
     case TOK_PDIV:
         gen_opi(BIN_OP_UDIV);
         return;
+    case TOK_UMULL:
+    case '%':
+    case TOK_UMOD:
     case BIN_OP_ADD:
     case BIN_OP_ADDC:
     case BIN_OP_BITAND:
@@ -510,23 +537,39 @@ void gen_opi(int op)
     case BIN_OP_SAR:
     case BIN_OP_DIV:
     case BIN_OP_UDIV:
-    case BIN_OP_MOD:
-    case BIN_OP_UMOD:
     {
+        int a, b;
+        int gen_const = 0;
         if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+            gen_const = 1;
             vswap();
-            int a = gv(RC_INT);
+            a = gv(RC_INT);
             vswap();
-            int value = vtop->c.i;
-            vtop--;
-            save_reg_upstack(a, 1);
-            instrBinOpConst(op, a, value);
+            b = vtop->c.i;
         } else {
             gv2(RC_INT, RC_INT);
-            int a = vtop[-1].r;
-            int b = vtop[0].r;
-            vtop--;
-            save_reg_upstack(a, 1);
+            a = vtop[-1].r;
+            b = vtop[0].r;
+        }
+
+        vtop--;
+        save_reg_upstack(a, 1);
+
+        if (op == BIN_OP_MUL || op == BIN_OP_DIV || op == BIN_OP_UDIV || op == TOK_UMULL || op == '%' || op == TOK_UMOD) {
+            save_reg(a + TREG_X0);
+            if (op == '%' || op == TOK_UMOD) {
+                vtop->r = a + TREG_X0;
+                op = BIN_OP_DIV;
+            }
+            if (op == TOK_UMULL) {
+                vtop->r2 = a + TREG_X0;
+                op = BIN_OP_MUL;
+            }
+        }
+
+        if (gen_const) {
+            instrBinOpConst(op, a, b);
+        } else {
             instrBinOp(op, a, b);
         }
         return;
@@ -550,32 +593,18 @@ void gen_opi(int op)
             int a = gv(RC_INT);
             vswap();
             int value = vtop->c.i;
-            vtop--;
-            vset_VT_CMP(op);
             instrBinOpConst(BIN_OP_CMP, a, value);
         } else {
             gv2(RC_INT, RC_INT);
             int a = vtop[-1].r;
             int b = vtop[0].r;
-            vtop--;
-            vset_VT_CMP(op);
             instrBinOp(BIN_OP_CMP, a, b);
         }
+        vtop--;
+        vset_VT_CMP(op);
         return;
     }
 
-    case BIN_OP_UMULL:
-    {
-        gv2(RC_INT, RC_INT);
-        int a = vtop[-1].r;
-        int b = vtop[0].r;
-        vtop--;
-        save_reg_upstack(a, 1);
-        save_reg(b);
-        instrBinOp(op, a, b);
-        vtop[0].r2 = b;
-        return;
-    }
     default:
         break;
     }
@@ -586,7 +615,32 @@ void gen_opi(int op)
  *    two operands are guaranteed to have the same floating point type */
 void gen_opf(int op)
 {
-    tcc_error("gen_opf unimplemented");
+    switch (op)
+    {
+    case '+':
+    {
+        int a, b;
+        int gen_const = 0;
+
+        gv2(RC_FLOAT, RC_FLOAT);
+        a = vtop[-1].r;
+        b = vtop[0].r;
+        int type = vtop[0].type.t & VT_BTYPE;
+        vtop--;
+        save_reg_upstack(a, 1);
+        if (type == VT_FLOAT) {
+            instrBinOp(op, a, b); // TODO: Actual op code
+        } else if (type == VT_DOUBLE || type == VT_LDOUBLE) {
+            instrBinOp(op, a, b);
+            instrBinOp(op, a, b); // TODO: Actual op code
+        }
+        return;
+    }
+
+    default:
+        break;
+    }
+    tcc_error("gen_opf %d unimplemented", op);
 }
 
 /* convert integers to fp 't' type. Must handle 'int', 'unsigned int'

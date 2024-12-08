@@ -50,9 +50,6 @@ enum {
     BIN_OP_SAR = 0x3E,
     BIN_OP_DIV = 0x2F,
     BIN_OP_UDIV = 0x83,
-    BIN_OP_MOD = 0x25,
-    BIN_OP_UMOD = 0x84,
-    BIN_OP_UMULL = 0x86,
     BIN_OP_CMP = 0xFF,
 };
 
@@ -69,9 +66,6 @@ _Static_assert(BIN_OP_SHR == TOK_SHR, "BIN_OP_SHR");
 _Static_assert(BIN_OP_SAR == TOK_SAR, "BIN_OP_SAR");
 _Static_assert(BIN_OP_DIV == '/', "BIN_OP_DIV");
 _Static_assert(BIN_OP_UDIV == TOK_UDIV, "BIN_OP_UDIV");
-_Static_assert(BIN_OP_MOD == '%', "BIN_OP_MOD");
-_Static_assert(BIN_OP_UMOD == TOK_UMOD, "BIN_OP_UMOD");
-_Static_assert(BIN_OP_UMULL == TOK_UMULL, "BIN_OP_UMULL");
 
 enum {
     CMP_OP_ULT = 0x92,
@@ -195,7 +189,7 @@ static void instrPush(int bits, int reg) {
         case 16: op2 = 2; break;
         case 24: op2 = 3; break;
         case 32: op2 = 4; break;
-        default: tcc_error("Internal error: invalid number of bits to push."); break;
+        default: tcc_error("Internal error: invalid number of bits to push %d.", bits); break;
     }
     DEBUG_INSTR("PUSH%d R%d", bits, reg);
     CCVMInstr* instr = genInstr(INSTR_PUSH, 0);
