@@ -590,19 +590,12 @@ export class Parser {
 
         switch (opcode) {
 
-            case IROpcode.INSTR_MOV_REG:          // dstReg = srcReg
-                this.noRelocation(relocation);
-                return { opcode, references, dstReg, srcReg };
-
             case IROpcode.INSTR_PUSH_BLOCK_REG:          // dstReg = BLOCK of srcReg bytes
                 this.noRelocation(relocation);
                 return { opcode, references, dstReg, srcReg };
 
             case IROpcode.INSTR_NOOP:
                 return { opcode, references, value };
-
-            case IROpcode.INSTR_MOV_CONST:        // reg = value
-                return { opcode, references, reg, value };
 
             case IROpcode.INSTR_LABEL_RELATIVE: {   // label, address_offset
                 this.noRelocation(relocation);

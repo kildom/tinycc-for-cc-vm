@@ -31,20 +31,12 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
 
         switch (instr.opcode) {
 
-            case IROpcode.INSTR_MOV_REG:          // dstReg = srcReg
-                line += ` R${instr.dstReg} = R${instr.srcReg}`;
-                break;
-
             case IROpcode.INSTR_PUSH_BLOCK_REG:          // dstReg = BLOCK OF srcReg bytes
                 line += ` R${instr.dstReg} = BLOCK of R${instr.srcReg} bytes`;
                 break;
 
             case IROpcode.INSTR_NOOP:
                 line += ` ${instr.value} bytes`;
-                break;
-
-            case IROpcode.INSTR_MOV_CONST:        // reg = value
-                line += ` R${instr.reg} = ${getValueStr(instr.value)}`;
                 break;
 
             case IROpcode.INSTR_LABEL_RELATIVE:   // label, address_offset
@@ -134,7 +126,9 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
                 break;
 
             case IROpcode.INSTR_BIN_OP:           // srcReg, dstReg, op2 = operator
-                if (instr.op === IRBinOpcode.BIN_OP_CMP) {
+                if (instr.op === IRBinOpcode.BIN_OP_MOV) {
+                    line += ` R${instr.dstReg} = R${instr.srcReg}`;
+                } else if (instr.op === IRBinOpcode.BIN_OP_CMP) {
                     line += ` R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
                 } else if (instr.op === IRBinOpcode.BIN_OP_MUL || instr.op === IRBinOpcode.BIN_OP_DIV || instr.op === IRBinOpcode.BIN_OP_UDIV) {
                     line += ` R${instr.dstReg}:X${instr.dstReg} = R${instr.dstReg} ${binOpName(instr.op)} R${instr.srcReg}`;
@@ -144,7 +138,9 @@ export function dumpIR(ir: IRInstruction[] | undefined, ind: string) {
                 break;
 
             case IROpcode.INSTR_BIN_OP_CONST:
-                if (instr.op === IRBinOpcode.BIN_OP_CMP) {
+                if (instr.op === IRBinOpcode.BIN_OP_MOV) {
+                    line += ` R${instr.reg} = ${getValueStr(instr.value)}`;
+                } else if (instr.op === IRBinOpcode.BIN_OP_CMP) {
                     line += ` R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;
                 } else if (instr.op === IRBinOpcode.BIN_OP_MUL || instr.op === IRBinOpcode.BIN_OP_DIV || instr.op === IRBinOpcode.BIN_OP_UDIV) {
                     line += ` R${instr.reg}:X${instr.reg} = R${instr.reg} ${binOpName(instr.op)} ${getValueStr(instr.value)}`;

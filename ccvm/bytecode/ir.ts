@@ -2,8 +2,6 @@
 // #region Op Codes
 
 export enum IROpcode {
-    INSTR_MOV_REG,          // dstReg = srcReg
-    INSTR_MOV_CONST,        // reg = value
     INSTR_LABEL_RELATIVE,   // label, address_offset
     INSTR_LABEL_ABSOLUTE,   // label, address_offset
     INSTR_WRITE_CONST,      // reg => [value]
@@ -20,7 +18,7 @@ export enum IROpcode {
     INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
     INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
     INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
-    INSTR_RETURN,           //
+    INSTR_RETURN,           // value = cleanup words
     INSTR_LABEL_ALIAS,      // labelAlias = label
     INSTR_HOST,             // value = host function index
     INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
@@ -56,6 +54,7 @@ export enum IRBinOpcode {
     BIN_OP_SAR = 0x3E,
     BIN_OP_DIV = 0x2F,
     BIN_OP_UDIV = 0x83,
+    BIN_OP_MOV = 0xFE,
     BIN_OP_CMP = 0xFF,
 };
 
@@ -122,7 +121,7 @@ interface IREmptyInstruction extends IRInstructionBase {
 }
 
 interface IRTwoRegInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_MOV_REG | IROpcode.INSTR_PUSH_BLOCK_REG;
+    opcode: IROpcode.INSTR_PUSH_BLOCK_REG;
     dstReg: number;
     srcReg: number;
 }
@@ -161,12 +160,6 @@ interface IRRegPushInstruction extends IRInstructionBase {
     opcode: IROpcode.INSTR_PUSH | IROpcode.INSTR_POP;
     reg: number;
     bytes: 1 | 2 | 3 | 4;
-}
-
-interface IRRegValueInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_MOV_CONST;
-    reg: number;
-    value: ValueFunction;
 }
 
 interface IRPushBlockConstInstruction extends IRInstructionBase {
@@ -234,7 +227,7 @@ export interface IRMarkerInstruction extends IRInstructionBase {
 
 export type IRInstruction = IRTwoRegOpInstruction | IRPushBlockLabelInstruction | IRRegPushInstruction
     | IRRegInstruction | IRLabelCondInstruction | IRLabelInstruction | IRConstRWInstruction
-    | IRRegRWInstruction | IRTwoRegInstruction | IRRegValueInstruction | IREmptyInstruction
+    | IRRegRWInstruction | IRTwoRegInstruction | IREmptyInstruction
     | IRWithValueInstruction | IRDataInstruction | IRFillInstruction | IRLabelValueInstruction
     | IRAliasInstruction | IRPushBlockConstInstruction | IRLabelCondInstrInstruction
     | IRJumpInstrInstruction | IRMarkerInstruction

@@ -10,8 +10,6 @@
 
 
 enum {
-    INSTR_MOV_REG,          // dstReg = srcReg
-    INSTR_MOV_CONST,        // reg = value
     INSTR_LABEL_RELATIVE,   // label, address_offset
     INSTR_LABEL_ABSOLUTE,   // label, address_offset
     INSTR_WRITE_CONST,      // reg => [value]
@@ -52,6 +50,7 @@ enum {
     BIN_OP_SAR = 0x3E,
     BIN_OP_DIV = 0x2F,
     BIN_OP_UDIV = 0x83,
+    BIN_OP_MOV = 0xFE,
     BIN_OP_CMP = 0xFF,
 };
 
@@ -147,26 +146,6 @@ static void addReloc(Sym* sym, uint32_t address, int type)
 }
 
 
-static void instrMovReloc(int reg, Sym* sym) {
-    DEBUG_INSTR("MOV_CONST R%d = %s", reg, get_tok_str(sym->v, NULL));
-    addReloc(sym, ind, RELOC_INSTR);
-    genInstr(INSTR_MOV_CONST, 0)->reg = reg;
-}
-
-static void instrMovConst(int reg, uint32_t value) {
-    DEBUG_INSTR("MOV_CONST R%d = 0x%08X", reg, value);
-    CCVMInstr* instr = genInstr(INSTR_MOV_CONST, 0);
-    instr->reg = reg;
-    instr->value = value;
-}
-
-static void instrMovReg(int to, int from) {
-    DEBUG_INSTR("MOV_REG R%d = R%d", to, from);
-    CCVMInstr* instr = genInstr(INSTR_MOV_REG, 0);
-    instr->dstReg = to;
-    instr->srcReg = from;
-}
-
 static void instrJumpReg(int is_call, int reg) {
     DEBUG_INSTR("%s_REG R%d", is_call ? "CALL" : "JUMP", reg);
     genInstr(is_call ? INSTR_CALL_REG : INSTR_JUMP_REG, 0)->reg = reg;
@@ -239,6 +218,15 @@ static void instrJumpCondLabel(int op, int label) {
     CCVMInstr* instr = genInstr(INSTR_JUMP_COND_LABEL, 0);
     instr->op2 = op;
     instr->label = label;
+}
+
+static void instrBinOpReloc(int op, int a, Sym* sym)
+{
+    DEBUG_INSTR("BIN_OP_RELOC R%d = %s", a, get_tok_str(sym->v, NULL));
+    //addReloc(sym, ind, RELOC_INSTR);
+    CCVMInstr* instr = genInstr(INSTR_BIN_OP_CONST, 0);
+    instr->op2 = op;
+    instr->dstReg = a;
 }
 
 static void instrBinOpConst(int op, int a, int value)

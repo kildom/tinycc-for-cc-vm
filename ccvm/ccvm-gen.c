@@ -211,9 +211,9 @@ void load(int r, SValue *sv)
 
         // Load constant value into register either from symbol or absolute.
         if (fr & VT_SYM) {
-            instrMovReloc(r, sv->sym);
+            instrBinOpReloc(BIN_OP_MOV, r, sv->sym);
         } else {
-            instrMovConst(r, fc);
+            instrBinOpConst(BIN_OP_MOV, r, fc);
         }
 
     } else if (v == VT_LOCAL) {
@@ -228,19 +228,19 @@ void load(int r, SValue *sv)
 
         // Load comparision result into register, e.g. int x = (a < b);
         int label = get_label(0);
-        instrMovConst(r, 1);
+        instrBinOpConst(BIN_OP_MOV, r, 1);
         instrJumpCondLabel(vtop->cmp_op, label);
-        instrMovConst(r, 0);
+        instrBinOpConst(BIN_OP_MOV, r, 0);
         instrLabel(label, 1, 0);
 
     } else if (v == VT_JMP || v == VT_JMPI) {
 
         // Load logic or/and result into register, e.g. int x = (a || b);
         int label = get_label(0);
-        instrMovConst(r, v & 1);
+        instrBinOpConst(BIN_OP_MOV, r, v & 1);
         instrJumpLabel(label);
         gsym(fc);
-        instrMovConst(r, (v & 1) ^ 1);
+        instrBinOpConst(BIN_OP_MOV, r, (v & 1) ^ 1);
         instrLabel(label, 1, 0);
 
     } else if (v != r) {
@@ -260,7 +260,7 @@ void load(int r, SValue *sv)
             if (r >= TREG_X0) {
                 instrRWConst(0, v, reg_addr(r), 32, 0, 0);
             } else {
-                instrMovReg(r, v);
+                instrBinOp(BIN_OP_MOV, r, v);
             }
         }
 
@@ -333,7 +333,7 @@ void store(int r, SValue *v)
             if (r >= TREG_X0) {
                 instrRWConst(0, fr, reg_addr(r), 32, 0, 0);
             } else {
-                instrMovReg(r, fr);
+                instrBinOp(BIN_OP_MOV, r, fr);
             }
         }
 
