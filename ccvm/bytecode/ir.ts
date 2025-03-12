@@ -1,83 +1,7 @@
 
-// #region Op Codes
-
-export enum IROpcode {
-    INSTR_MOV_REG,          // dstReg = srcReg
-    INSTR_MOV_CONST,        // reg = value
-    INSTR_LABEL_RELATIVE,   // label, address_offset
-    INSTR_LABEL_ABSOLUTE,   // label, address_offset
-    INSTR_WRITE_CONST,      // reg => [value]
-    INSTR_READ_CONST,       // reg <= [value]
-    INSTR_WRITE_REG,        // reg => [addrReg]
-    INSTR_READ_REG,         // reg <= [addrReg]
-    INSTR_JUMP_COND_LABEL,  // label, op2 = condition
-    INSTR_JUMP_CONST,       // address
-    INSTR_CALL_CONST,       // address
-    INSTR_JUMP_LABEL,       // label
-    INSTR_JUMP_REG,         // reg
-    INSTR_CALL_REG,         // reg
-    INSTR_PUSH,             // reg, op2 = 1..4 bytes
-    INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
-    INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
-    INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
-    INSTR_RETURN,           //
-    INSTR_LABEL_ALIAS,      // labelAlias = label
-    INSTR_HOST,             // value = host function index
-    INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
-    INSTR_POP_BLOCK_CONST,  // value = bytes
-    INSTR_BIN_OP_CONST,     // reg = reg ?? value
-    INSTR_NOOP,             // value = bytes
-    INSTR_PUSH_BLOCK_REG,   // dstReg = block size srcReg
-
-    INSTR_JUMP_COND_INSTR,
-    INSTR_JUMP_INSTR,
-
-    INSTR_DATA,
-    INSTR_WORD,
-    INSTR_FILL,
-    INSTR_EMPTY,
-    INSTR_MARKER,
-    /*INSTR_DISPOSABLE_BEGIN,
-    INSTR_DISPOSABLE_END,
-    INSTR_LABEL,*/
-};
-
-export enum IRBinOpcode {
-    BIN_OP_ADD = 0x2B,
-    BIN_OP_SUB = 0x2D,
-    BIN_OP_ADDC = 0x88,
-    BIN_OP_SUBC = 0x8a,
-    BIN_OP_BITAND = 0x26,
-    BIN_OP_BITXOR = 0x5E,
-    BIN_OP_BITOR = 0x7C,
-    BIN_OP_MUL = 0x2A,
-    BIN_OP_SHL = 0x3C,
-    BIN_OP_SHR = 0x8b,
-    BIN_OP_SAR = 0x3E,
-    BIN_OP_DIV = 0x2F,
-    BIN_OP_UDIV = 0x83,
-    BIN_OP_CMP = 0xFF,
-};
-
-export enum IRCmpOpcode {
-    CMP_OP_ULT = 0x92,
-    CMP_OP_UGE = 0x93,
-    CMP_OP_EQ = 0x94,
-    CMP_OP_NE = 0x95,
-    CMP_OP_ULE = 0x96,
-    CMP_OP_UGT = 0x97,
-    CMP_OP_Nset = 0x98,
-    CMP_OP_Nclear = 0x99,
-    CMP_OP_LT = 0x9c,
-    CMP_OP_GE = 0x9d,
-    CMP_OP_LE = 0x9e,
-    CMP_OP_GT = 0x9f,
-};
-
-// #endregion
-
-
 // #region Instructions
+
+import { IROpcode } from "./enums";
 
 export enum RWOpcodeFlags {
     SIGNED = 0x80,
@@ -122,7 +46,7 @@ interface IREmptyInstruction extends IRInstructionBase {
 }
 
 interface IRTwoRegInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_MOV_REG | IROpcode.INSTR_PUSH_BLOCK_REG;
+    opcode: IROpcode.INSTR_PUSH_BLOCK_REG;
     dstReg: number;
     srcReg: number;
 }
@@ -161,12 +85,6 @@ interface IRRegPushInstruction extends IRInstructionBase {
     opcode: IROpcode.INSTR_PUSH | IROpcode.INSTR_POP;
     reg: number;
     bytes: 1 | 2 | 3 | 4;
-}
-
-interface IRRegValueInstruction extends IRInstructionBase {
-    opcode: IROpcode.INSTR_MOV_CONST;
-    reg: number;
-    value: ValueFunction;
 }
 
 interface IRPushBlockConstInstruction extends IRInstructionBase {
@@ -234,7 +152,7 @@ export interface IRMarkerInstruction extends IRInstructionBase {
 
 export type IRInstruction = IRTwoRegOpInstruction | IRPushBlockLabelInstruction | IRRegPushInstruction
     | IRRegInstruction | IRLabelCondInstruction | IRLabelInstruction | IRConstRWInstruction
-    | IRRegRWInstruction | IRTwoRegInstruction | IRRegValueInstruction | IREmptyInstruction
+    | IRRegRWInstruction | IRTwoRegInstruction | IREmptyInstruction
     | IRWithValueInstruction | IRDataInstruction | IRFillInstruction | IRLabelValueInstruction
     | IRAliasInstruction | IRPushBlockConstInstruction | IRLabelCondInstrInstruction
     | IRJumpInstrInstruction | IRMarkerInstruction

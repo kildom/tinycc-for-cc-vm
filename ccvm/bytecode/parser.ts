@@ -1,9 +1,15 @@
 
 
 import * as fs from 'node:fs';
-import { AbsoluteSymbol, collectAliasedLabels, DataSymbol, ExportEntry, FunctionInnerSymbol, FunctionSymbol, ImportSymbol, InnerSymbol, InvalidSymbol, IRInstruction, IROpcode, Label, PredefinedSymbols, predefinedSymbols, Relocation, RelocationType, RWOpcodeFlags, Section, SymbolBase, UndefinedSymbol, ValueFunction, WithIRSymbol } from './ir';
+import { 
+    AbsoluteSymbol, collectAliasedLabels, DataSymbol, ExportEntry, FunctionInnerSymbol, FunctionSymbol, ImportSymbol,
+    InnerSymbol, InvalidSymbol, IRInstruction, Label, PredefinedSymbols, predefinedSymbols, Relocation, RelocationType,
+    Section, SymbolBase, UndefinedSymbol, ValueFunction, WithIRSymbol
+} from './ir';
+
 import { Dict, error, newDict, replaceObjectContent, warning } from './utils';
 import { dumpIRFromSymbols } from './dump';
+import { IROpcode } from './enums';
 
 const SHN_LORESERVE = 0xff00;
 const SHN_ABS = 0xfff1;
@@ -590,19 +596,12 @@ export class Parser {
 
         switch (opcode) {
 
-            case IROpcode.INSTR_MOV_REG:          // dstReg = srcReg
-                this.noRelocation(relocation);
-                return { opcode, references, dstReg, srcReg };
-
             case IROpcode.INSTR_PUSH_BLOCK_REG:          // dstReg = BLOCK of srcReg bytes
                 this.noRelocation(relocation);
                 return { opcode, references, dstReg, srcReg };
 
             case IROpcode.INSTR_NOOP:
                 return { opcode, references, value };
-
-            case IROpcode.INSTR_MOV_CONST:        // reg = value
-                return { opcode, references, reg, value };
 
             case IROpcode.INSTR_LABEL_RELATIVE: {   // label, address_offset
                 this.noRelocation(relocation);

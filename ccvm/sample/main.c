@@ -1,6 +1,7 @@
 #if 1
 
 #include "header.h"
+#include "../ccvm-enums.h"
 
 CCVM_IMPORT(3, print);
 
@@ -85,20 +86,29 @@ void __ccvm_invalid_export_handler() {
 
 }
 
+#ifdef __ccvm_float_64__
+#define _CCVM_XREG(reg) unsigned reg
+#else
+#define _CCVM_XREG(reg)
+#endif
+
+
 __attribute__((section(".ccvm.registers")))
 struct {
     unsigned R0;
-    unsigned X0;
+    _CCVM_XREG(X0);
     unsigned R1;
-    unsigned X1;
+    _CCVM_XREG(X1);
     unsigned R2;
-    unsigned X2;
+    _CCVM_XREG(X2);
     unsigned R3;
-    unsigned X3;
+    _CCVM_XREG(X3);
     unsigned SP;
     unsigned PC;
     unsigned BP;
-    unsigned BP2;
+    unsigned FLAGS;
+    unsigned AUX;
+    unsigned STASH;
     unsigned char initialized;
 } __ccvm_registers;
 
@@ -118,33 +128,6 @@ void __attribute__((destructor)) myCleaner() {
     fx();
     fx();
 }
-
-enum IROpcode {
-    INSTR_MOV_REG,          // dstReg = srcReg
-    INSTR_MOV_CONST,        // reg = value
-    INSTR_LABEL_RELATIVE,   // label, address_offset
-    INSTR_LABEL_ABSOLUTE,   // label, address_offset
-    INSTR_WRITE_CONST,      // reg => [value]
-    INSTR_READ_CONST,       // reg <= [value]
-    INSTR_WRITE_REG,        // reg => [addrReg]
-    INSTR_READ_REG,         // reg <= [addrReg]
-    INSTR_JUMP_COND_LABEL,  // label, op2 = condition
-    INSTR_JUMP_CONST,       // address
-    INSTR_CALL_CONST,       // address
-    INSTR_JUMP_LABEL,       // label
-    INSTR_JUMP_REG,         // reg
-    INSTR_CALL_REG,         // reg
-    INSTR_PUSH,             // reg, op2 = 1..4 bytes
-    INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
-    INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
-    INSTR_CMP,              // srcReg, dstReg, op2 = comparison operator
-    INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
-    INSTR_RETURN,           // value = cleanup words
-    INSTR_LABEL_ALIAS,      // labelAlias = label
-    INSTR_HOST,             // value = host function index
-    INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
-    INSTR_POP_BLOCK_CONST,  // value = bytes
-};
 
 typedef struct CCVMInstr {
     unsigned char opcode;
@@ -169,26 +152,23 @@ CCVMInstr _ccvm_entry[] = {
 
     // READ uint8 __ccvm_registers.initialized
     { .opcode = INSTR_READ_CONST,  .dstReg = 3, .op2 = 0, .value1 = (unsigned int)&__ccvm_registers.initialized, },
-    { .opcode = INSTR_MOV_CONST, .dstReg = 2, .value1 = 1, },
-    { .opcode = INSTR_CMP,  .dstReg = 3, .srcReg = 2, },
-    { .opcode = INSTR_JUMP_COND_LABEL,  .op2 = 0, .value1 = 1 },
+    { .opcode = INSTR_BIN_OP_CONST, .op2 = BIN_OP_CMP,  .dstReg = 3, .value1 = 1, },
+    { .opcode = INSTR_JUMP_COND_LABEL,  .op2 = CMP_OP_EQ, .value1 = 1 },
     { .opcode = INSTR_WRITE_CONST, .dstReg = 2, .op2 = 0, .value1 = (unsigned int)&__ccvm_registers.initialized, },
-    { .opcode = INSTR_MOV_CONST, .dstReg = 2, .value1 = (unsigned int)&__ccvm_section_stack_end__, },
+    { .opcode = INSTR_BIN_OP_CONST, .op2 = BIN_OP_MOV, .dstReg = 2, .value1 = (unsigned int)&__ccvm_section_stack_end__, },
     { .opcode = INSTR_WRITE_CONST, .dstReg = 2, .op2 = 2, .value1 = (unsigned int)&__ccvm_registers.SP, },
     { .opcode = INSTR_WRITE_CONST, .dstReg = 2, .op2 = 2, .value1 = (unsigned int)&__ccvm_registers.BP, },
-    { .opcode = INSTR_MOV_CONST, .dstReg = 2, .value1 = (unsigned int)&__ccvm_section_rodata_begin__, },
-    { .opcode = INSTR_WRITE_CONST, .dstReg = 2, .op2 = 2, .value1 = (unsigned int)&__ccvm_registers.BP2, },
+    //{ .opcode = INSTR_BIN_OP_CONST, .op2 = BIN_OP_MOV, .dstReg = 2, .value1 = (unsigned int)&__ccvm_section_rodata_begin__, },
+    //{ .opcode = INSTR_WRITE_CONST, .dstReg = 2, .op2 = 2, .value1 = (unsigned int)&__ccvm_registers.BP2, },
     { .opcode = INSTR_PUSH, .srcReg = 0, .op2 = 4 },
     { .opcode = INSTR_CALL_CONST, .value1 = (unsigned int)&__ccvm_c_startup__ },
     { .opcode = INSTR_POP, .srcReg = 0, .op2 = 4 },
     { .opcode = INSTR_LABEL_RELATIVE, .value1 = 1, .value2 = 0 },
-    { .opcode = INSTR_MOV_CONST, .dstReg = 1, .value1 = 4 },                    // MOV R1, 4
-    { .opcode = INSTR_BIN_OP,    .dstReg = 0, .srcReg = 1, .op2 = '*' },        // MUL R0, 4
-    { .opcode = INSTR_MOV_CONST, .dstReg = 3, .value1 = (unsigned int)&__ccvm_export_table_begin__},
-                                                                                // MOV R3, __ccvm_export_table_begin__
-    { .opcode = INSTR_BIN_OP,    .dstReg = 3, .srcReg = 0, .op2 = '+' },        // ADD R3, R0
-    { .opcode = INSTR_READ_REG,  .dstReg = 3, .srcReg = 3, .op2 = 2 },   // READ32 R3, [R3]  # or READ16U for small model
-    { .opcode = INSTR_CALL_REG,  .dstReg = 3 },                                 // CALL R3
+    { .opcode = INSTR_BIN_OP_CONST, .dstReg = 0, .value1 = 2, .op2 = BIN_OP_SHL },        // MUL R0, 4
+    { .opcode = INSTR_BIN_OP_CONST, .dstReg = 0, .op2 = BIN_OP_ADD, .value1 = (unsigned int)&__ccvm_export_table_begin__ },
+                                                                               // ADD R3, __ccvm_export_table_begin__
+    { .opcode = INSTR_READ_REG,  .dstReg = 0, .srcReg = 0, .op2 = 2 },   // READ32 R3, [R3]  # or READ16U for small model
+    { .opcode = INSTR_CALL_REG,  .dstReg = 0 },                                 // CALL R3
     { .opcode = INSTR_HOST,      .value1 = (unsigned int)(-1) },                 // HOST -1 # Return to host
     
                                                 
@@ -280,12 +260,38 @@ void __ccvm_c_startup__() {
     }
 }
 
-CCVM_EXPORT(4, test_arr);
+void memcpy(void *dest, const void* src, unsigned int size) {
+    char* d = (char*)dest;
+    const char* s = (const char*)src;
+    while (size--) {
+        *d++ = *s++;
+    }
+}
 
 int arr[16];
 
-int test_arr(int index, int b) {
-    return index > b;
+typedef double T;
+
+T test_arr(T x) {
+    return -x;
+}
+
+int test_mod(int x, int y) {
+    return x % y;
+}
+
+long long test_mul64(long long x, long long y) {
+    return x * y;
+}
+
+CCVM_EXPORT(4, testall);
+
+void testall() {
+    static int arr[] = {
+        (int)(void*)&test_arr,
+        (int)(void*)&test_mod,
+        (int)(void*)&test_arr,
+    };
 }
 
 /*

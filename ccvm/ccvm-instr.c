@@ -8,52 +8,7 @@
 #include "tcc.h"
 #endif
 
-
-enum {
-    INSTR_MOV_REG,          // dstReg = srcReg
-    INSTR_MOV_CONST,        // reg = value
-    INSTR_LABEL_RELATIVE,   // label, address_offset
-    INSTR_LABEL_ABSOLUTE,   // label, address_offset
-    INSTR_WRITE_CONST,      // reg => [value]
-    INSTR_READ_CONST,       // reg <= [value]
-    INSTR_WRITE_REG,        // reg => [addrReg]
-    INSTR_READ_REG,         // reg <= [addrReg]
-    INSTR_JUMP_COND_LABEL,  // label, op2 = condition
-    INSTR_JUMP_CONST,       // address
-    INSTR_CALL_CONST,       // address
-    INSTR_JUMP_LABEL,       // label
-    INSTR_JUMP_REG,         // reg
-    INSTR_CALL_REG,         // reg
-    INSTR_PUSH,             // reg, op2 = 1..4 bytes
-    INSTR_PUSH_BLOCK_CONST, // reg, op2 = optional, value = block size
-    INSTR_PUSH_BLOCK_LABEL, // reg, op2 = optional, label = label containing block size
-    INSTR_BIN_OP,           // srcReg, dstReg, op2 = operator
-    INSTR_RETURN,           // value = cleanup words
-    INSTR_LABEL_ALIAS,      // labelAlias = label
-    INSTR_HOST,             // value = host function index
-    INSTR_POP,              // reg, op2 = 1..4 bytes, TODO: is signed needed?
-    INSTR_POP_BLOCK_CONST,  // value = bytes
-    INSTR_BIN_OP_CONST,     // reg = reg ?? value
-    INSTR_NOOP,             // value = bytes
-    INSTR_PUSH_BLOCK_REG,   // dstReg = block size srcReg
-};
-
-enum {
-    BIN_OP_ADD = 0x2B,
-    BIN_OP_SUB = 0x2D,
-    BIN_OP_ADDC = 0x88,
-    BIN_OP_SUBC = 0x8a,
-    BIN_OP_BITAND = 0x26,
-    BIN_OP_BITXOR = 0x5E,
-    BIN_OP_BITOR = 0x7C,
-    BIN_OP_MUL = 0x2A,
-    BIN_OP_SHL = 0x3C,
-    BIN_OP_SHR = 0x8b,
-    BIN_OP_SAR = 0x3E,
-    BIN_OP_DIV = 0x2F,
-    BIN_OP_UDIV = 0x83,
-    BIN_OP_CMP = 0xFF,
-};
+#include "ccvm-enums.h"
 
 _Static_assert(BIN_OP_ADD == '+', "BIN_OP_ADD");
 _Static_assert(BIN_OP_SUB == '-', "BIN_OP_SUB");
@@ -68,21 +23,6 @@ _Static_assert(BIN_OP_SHR == TOK_SHR, "BIN_OP_SHR");
 _Static_assert(BIN_OP_SAR == TOK_SAR, "BIN_OP_SAR");
 _Static_assert(BIN_OP_DIV == '/', "BIN_OP_DIV");
 _Static_assert(BIN_OP_UDIV == TOK_UDIV, "BIN_OP_UDIV");
-
-enum {
-    CMP_OP_ULT = 0x92,
-    CMP_OP_UGE = 0x93,
-    CMP_OP_EQ = 0x94,
-    CMP_OP_NE = 0x95,
-    CMP_OP_ULE = 0x96,
-    CMP_OP_UGT = 0x97,
-    CMP_OP_Nset = 0x98,
-    CMP_OP_Nclear = 0x99,
-    CMP_OP_LT = 0x9c,
-    CMP_OP_GE = 0x9d,
-    CMP_OP_LE = 0x9e,
-    CMP_OP_GT = 0x9f,
-};
 
 _Static_assert(CMP_OP_ULT == TOK_ULT, "CMP_OP_ULT");
 _Static_assert(CMP_OP_UGE == TOK_UGE, "CMP_OP_UGE");
@@ -144,27 +84,6 @@ static void addReloc(Sym* sym, uint32_t address, int type)
 {
     DEBUG_COMMENT("ElfReloc: %s", get_tok_str(sym->v, NULL));
     greloc(cur_text_section, sym, address, type);
-}
-
-
-static void instrMovReloc(int reg, Sym* sym) {
-    DEBUG_INSTR("MOV_CONST R%d = %s", reg, get_tok_str(sym->v, NULL));
-    addReloc(sym, ind, RELOC_INSTR);
-    genInstr(INSTR_MOV_CONST, 0)->reg = reg;
-}
-
-static void instrMovConst(int reg, uint32_t value) {
-    DEBUG_INSTR("MOV_CONST R%d = 0x%08X", reg, value);
-    CCVMInstr* instr = genInstr(INSTR_MOV_CONST, 0);
-    instr->reg = reg;
-    instr->value = value;
-}
-
-static void instrMovReg(int to, int from) {
-    DEBUG_INSTR("MOV_REG R%d = R%d", to, from);
-    CCVMInstr* instr = genInstr(INSTR_MOV_REG, 0);
-    instr->dstReg = to;
-    instr->srcReg = from;
 }
 
 static void instrJumpReg(int is_call, int reg) {
@@ -239,6 +158,15 @@ static void instrJumpCondLabel(int op, int label) {
     CCVMInstr* instr = genInstr(INSTR_JUMP_COND_LABEL, 0);
     instr->op2 = op;
     instr->label = label;
+}
+
+static void instrBinOpReloc(int op, int a, Sym* sym, int value) {
+    DEBUG_INSTR("BIN_OP_CONST 0x%02X R%d %s", op, a, get_tok_str(sym->v, NULL));
+    addReloc(sym, ind, RELOC_INSTR);
+    CCVMInstr* instr = genInstr(INSTR_BIN_OP_CONST, 0);
+    instr->op2 = op;
+    instr->reg = a;
+    instr->value = value;
 }
 
 static void instrBinOpConst(int op, int a, int value)

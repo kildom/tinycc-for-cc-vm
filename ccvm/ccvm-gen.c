@@ -1,7 +1,7 @@
 
 #if defined(TARGET_DEFS_ONLY) || defined(INTELLISENSE)
 /* number of available registers */
-#define NB_REGS 8
+#define NB_REGS 5
 
 /* a register can belong to several classes. The classes must be
    sorted from more general to more precise (see gv2() code which does
@@ -11,10 +11,7 @@
 #define RC_R1      0x0004
 #define RC_R2      0x0008
 #define RC_R3      0x0010
-#define RC_X0      0x0020
-#define RC_X1      0x0040
-#define RC_X2      0x0080
-#define RC_X3      0x0100
+#define RC_AUX     0x0020
 #define RC_IRET    RC_R0  /* function return: integer register */
 #define RC_IRE2    RC_R1  /* function return: second integer register */
 #define RC_FRET    RC_R0  /* function return: float register */
@@ -26,10 +23,7 @@ enum {
     TREG_R1,
     TREG_R2,
     TREG_R3,
-    TREG_X0 = TREG_R0 + 4,
-    TREG_X1,
-    TREG_X2,
-    TREG_X3,
+    TREG_AUX,
 };
 
 /* return registers for function */
@@ -70,6 +64,7 @@ enum {
 #include "ccvm-output.c"
 #include "ccvm-link.c"
 
+#if CCVM_FLOAT_64
 #define R0_ADDR (0 * 4)
 #define X0_ADDR (1 * 4)
 #define R1_ADDR (2 * 4)
@@ -82,7 +77,20 @@ enum {
 #define PC_ADDR (9 * 4)
 #define BP_ADDR (10 * 4)
 #define FLAGS_ADDR (11 * 4)
-#define STASH_ADDR (12 * 4)
+#define AUX_ADDR (12 * 4)
+#define STASH_ADDR (13 * 4)
+#else
+#define R0_ADDR (0 * 4)
+#define R1_ADDR (1 * 4)
+#define R2_ADDR (2 * 4)
+#define R3_ADDR (3 * 4)
+#define SP_ADDR (4 * 4)
+#define PC_ADDR (5 * 4)
+#define BP_ADDR (6 * 4)
+#define FLAGS_ADDR (7 * 4)
+#define AUX_ADDR (8 * 4)
+#define STASH_ADDR (9 * 4)
+#endif
 
 int reg_addr(int reg) {
     switch (reg) {
@@ -90,10 +98,7 @@ int reg_addr(int reg) {
     case TREG_R1: return R1_ADDR;
     case TREG_R2: return R2_ADDR;
     case TREG_R3: return R3_ADDR;
-    case TREG_X0: return X0_ADDR;
-    case TREG_X1: return X1_ADDR;
-    case TREG_X2: return X2_ADDR;
-    case TREG_X3: return X3_ADDR;
+    case TREG_AUX: return AUX_ADDR;
     default: 
         tcc_error("INTERNAL ERROR: Using invalid register.");
         return 0;
@@ -103,17 +108,17 @@ int reg_addr(int reg) {
 ST_DATA const char * const target_machine_defs =
     "__ccvm__\0"
     "__ccvm\0"
+#if CCVM_FLOAT_64
+    "__ccvm_float_64__\0"
+#endif
     ;
 
 ST_DATA const int reg_classes[NB_REGS] = {
-    RC_INT | RC_R0, // R0
-    RC_INT | RC_R1, // R1
-    RC_INT | RC_R2, // R2
-    RC_INT | RC_R3, // R3
-    RC_X0, // X0
-    RC_X1, // X1
-    RC_X2, // X2
-    RC_X3, // X3
+    RC_INT | RC_R0,
+    RC_INT | RC_R1,
+    RC_INT | RC_R2,
+    RC_INT | RC_R3,
+    RC_AUX,
 };
 
 const char *default_elfinterp(struct TCCState *s)
@@ -211,9 +216,9 @@ void load(int r, SValue *sv)
 
         // Load constant value into register either from symbol or absolute.
         if (fr & VT_SYM) {
-            instrMovReloc(r, sv->sym);
+            instrBinOpReloc(BIN_OP_MOV, r, sv->sym, fc);
         } else {
-            instrMovConst(r, fc);
+            instrBinOpConst(BIN_OP_MOV, r, fc);
         }
 
     } else if (v == VT_LOCAL) {
@@ -228,39 +233,31 @@ void load(int r, SValue *sv)
 
         // Load comparision result into register, e.g. int x = (a < b);
         int label = get_label(0);
-        instrMovConst(r, 1);
+        instrBinOpConst(BIN_OP_MOV, r, 1);
         instrJumpCondLabel(vtop->cmp_op, label);
-        instrMovConst(r, 0);
+        instrBinOpConst(BIN_OP_MOV, r, 0);
         instrLabel(label, 1, 0);
 
     } else if (v == VT_JMP || v == VT_JMPI) {
 
         // Load logic or/and result into register, e.g. int x = (a || b);
         int label = get_label(0);
-        instrMovConst(r, v & 1);
+        instrBinOpConst(BIN_OP_MOV, r, v & 1);
         instrJumpLabel(label);
         gsym(fc);
-        instrMovConst(r, (v & 1) ^ 1);
+        instrBinOpConst(BIN_OP_MOV, r, (v & 1) ^ 1);
         instrLabel(label, 1, 0);
 
     } else if (v != r) {
 
-        // Move between registers, Xn registers also supported
-        if (v >= TREG_X0) {
-            if (r >= TREG_X0) {
-                int tmp_reg = 0;
-                instrRWConst(0, tmp_reg, STASH_ADDR, 32, 0, 0);
-                instrRWConst(1, tmp_reg, reg_addr(v), 32, 0, 0);
-                instrRWConst(0, tmp_reg, reg_addr(r), 32, 0, 0);
-                instrRWConst(1, tmp_reg, STASH_ADDR, 32, 0, 0);
-            } else {
-                instrRWConst(1, r, reg_addr(v), 32, 0, 0);
-            }
+        // Move between registers, AUX register also supported
+        if (v == TREG_AUX) {
+            instrRWConst(1, r, reg_addr(v), 32, 0, 0);
         } else {
-            if (r >= TREG_X0) {
+            if (r == TREG_AUX) {
                 instrRWConst(0, v, reg_addr(r), 32, 0, 0);
             } else {
-                instrMovReg(r, v);
+                instrBinOp(BIN_OP_MOV, r, v);
             }
         }
 
@@ -318,22 +315,14 @@ void store(int r, SValue *v)
 
     } else if (fr != r) {
 
-        // Move between registers, Xn registers also supported
-        if (fr >= TREG_X0) {
-            if (r >= TREG_X0) {
-                int tmp_reg = 0;
-                instrRWConst(0, tmp_reg, STASH_ADDR, 32, 0, 0);
-                instrRWConst(1, tmp_reg, reg_addr(fr), 32, 0, 0);
-                instrRWConst(0, tmp_reg, reg_addr(r), 32, 0, 0);
-                instrRWConst(1, tmp_reg, STASH_ADDR, 32, 0, 0);
-            } else {
-                instrRWConst(1, r, reg_addr(fr), 32, 0, 0);
-            }
+        // Move between registers, AUX register also supported
+        if (fr == TREG_AUX) {
+            instrRWConst(1, r, reg_addr(fr), 32, 0, 0);
         } else {
-            if (r >= TREG_X0) {
+            if (r == TREG_AUX) {
                 instrRWConst(0, fr, reg_addr(r), 32, 0, 0);
             } else {
-                instrMovReg(r, fr);
+                instrBinOp(BIN_OP_MOV, r, fr);
             }
         }
 
@@ -605,13 +594,13 @@ void gen_opi(int op)
         save_reg_upstack(a, 1);
 
         if (op == BIN_OP_MUL || op == BIN_OP_DIV || op == BIN_OP_UDIV || op == TOK_UMULL || op == '%' || op == TOK_UMOD) {
-            save_reg(a + TREG_X0);
+            save_reg(TREG_AUX);
             if (op == '%' || op == TOK_UMOD) {
-                vtop->r = a + TREG_X0;
+                vtop->r = TREG_AUX;
                 op = BIN_OP_DIV;
             }
             if (op == TOK_UMULL) {
-                vtop->r2 = a + TREG_X0;
+                vtop->r2 = TREG_AUX;
                 op = BIN_OP_MUL;
             }
         }
@@ -664,6 +653,22 @@ void gen_opi(int op)
  *    two operands are guaranteed to have the same floating point type */
 void gen_opf(int op)
 {
+    if (op == TOK_NEG) { /* unary minus */
+        gv(RC_FLOAT);
+        int t = (vtop->type.t & VT_BTYPE);
+        printf("--------------------\nNEG of R%d type %s\n", vtop->r, (t == VT_FLOAT) ? "FLOAT" : (t == VT_DOUBLE) ? "DOUBLE" : "UNKNOWN");
+        //instrFloat32(op, vtop->r);
+        return;
+    }
+
+    if (op >= TOK_ULT && op <= TOK_GT) {
+        instrReturn();
+        instrReturn();
+        instrReturn();
+        instrReturn();
+    } else {
+        //instrFloat32(op, );
+    }
     /*switch (op)
     {
     case '+':
